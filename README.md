@@ -1,4 +1,4 @@
-# 🌿 Nuyu Recovery Home — Booking & Operations System
+# Nuyu Recovery Home: Booking & Operations System
 
 A full-stack booking and operations platform for **Nuyu Recovery Home**, designed to streamline client appointments, automate scheduling, manage recovery stays, and provide real-time business insights.
 
@@ -16,7 +16,7 @@ Nuyu Recovery Home is a wellness and post-treatment care brand offering services
 * Oxygen Healing Therapy
 * Morpheus8 Treatment
 
-This system provides a **modern, automated solution** for managing bookings, payments, and daily operations — reducing manual work and improving client experience.
+This system provides a **modern, automated solution** for managing bookings, payments, and daily operations, reducing manual work and improving client experience.
 
 ---
 
@@ -195,4 +195,4 @@ Full-stack Developer
 
 ## 💡 Final Note
 
-This project demonstrates the design and implementation of a **real-world booking system with payment integration, scheduling logic, and business analytics** — similar to platforms like Fresha and Calendly, but tailored to a specialized wellness business.
+This project demonstrates the design and implementation of a **real-world booking system with payment integration, scheduling logic, and business analytics**, similar to platforms such as Fresha and Calendly, but tailored for a specialized wellness business.

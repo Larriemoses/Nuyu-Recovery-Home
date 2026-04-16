@@ -1,6 +1,37 @@
-# Nuyu Recovery Home: Booking & Operations System
+# Nuyu Recovery Home
 
-A full-stack booking and operations platform for **Nuyu Recovery Home**, designed to streamline client appointments, automate scheduling, manage recovery stays, and provide real-time business insights.
+A full-stack booking and operations platform for Nuyu Recovery Home, now scaffolded as a workspace with a React frontend, a TypeScript server, and a Supabase backend layer.
+
+## Current Scaffold
+
+```txt
+.
+|-- client/
+|   |-- src/
+|   |   |-- app/
+|   |   |-- components/
+|   |   |-- features/
+|   |   |-- hooks/
+|   |   |-- lib/
+|   |   |-- types/
+|   |   `-- utils/
+|-- server/
+|   |-- src/
+|   |   |-- config/
+|   |   |-- lib/
+|   |   |-- routes/
+|   |   |-- services/
+|   |   `-- types/
+|-- supabase/
+|   |-- functions/
+|   |-- migrations/
+|   |-- config.toml
+|   `-- seed.sql
+|-- package.json
+`-- tsconfig.base.json
+```
+
+This repo now includes a Vite + React + Tailwind client, an Express API scaffold for reservation and payment flows, and a Supabase schema with seed data plus Edge Function placeholders for slot holds, payment verification, email, and hold cleanup.
 
 ---
 
@@ -128,14 +159,35 @@ This system provides a **modern, automated solution** for managing bookings, pay
 ## 📦 Project Structure
 
 ```txt
-src/
-  components/
-  pages/
-  features/
-  hooks/
-  lib/
-  types/
-  utils/
+client/
+  src/
+    app/
+    components/
+    features/
+    hooks/
+    lib/
+    types/
+    utils/
+server/
+  src/
+    config/
+    lib/
+    routes/
+    services/
+    types/
+supabase/
+  functions/
+  migrations/
+  config.toml
+  seed.sql
+```
+
+## Local Development
+
+```bash
+npm install
+npm run dev:client
+npm run dev:server
 ```
 
 ---

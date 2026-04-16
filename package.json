@@ -1,0 +1,23 @@
+{
+  "name": "nuyu-recovery-home",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev:client": "npm run dev --workspace client",
+    "dev:server": "npm run dev --workspace server",
+    "build": "npm run build --workspace client && npm run build --workspace server",
+    "typecheck": "npm run typecheck --workspace client && npm run typecheck --workspace server",
+    "admin:create": "npm run admin:create --workspace server --",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:db:push": "supabase db push",
+    "supabase:db:reset": "supabase db reset"
+  },
+  "devDependencies": {
+    "supabase": "^2.91.2"
+  }
+}

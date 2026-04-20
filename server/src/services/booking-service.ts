@@ -33,6 +33,31 @@ type AvailabilityWindowRow = {
   slot_length_minutes: number;
 };
 
+type ManualAvailabilitySlotRow = {
+  starts_at: string;
+  ends_at: string;
+};
+
+type OccupiedRangeRow = {
+  starts_at: string;
+  ends_at: string;
+};
+
+type HoldRangeRow = OccupiedRangeRow & {
+  expires_at: string;
+};
+
+type BookingRangeRow = {
+  slot_starts_at: string;
+  slot_ends_at: string;
+};
+
+type AvailabilitySlot = {
+  startsAt: string;
+  endsAt: string;
+  label: string;
+};
+
 function formatTimeLabel(date: Date) {
   return new Intl.DateTimeFormat("en-NG", {
     hour: "numeric",
@@ -56,6 +81,22 @@ function getDayBounds(date: string) {
     dayStartIso: dayStart.toISOString(),
     dayEndIso: dayEnd.toISOString(),
   };
+}
+
+function getLagosDateKey(value: Date) {
+  return new Date(value.getTime() + 60 * 60_000).toISOString().slice(0, 10);
+}
+
+function isMissingRelationError(error?: { code?: string } | null) {
+  return error?.code === "PGRST205";
+}
+
+function createSlotLabel(startsAt: Date, endsAt: Date) {
+  return `${formatTimeLabel(startsAt)} - ${formatTimeLabel(endsAt)}`;
+}
+
+function createSlotKey(startsAtIso: string, endsAtIso: string) {
+  return `${startsAtIso}__${endsAtIso}`;
 }
 
 class BookingService {
@@ -149,22 +190,47 @@ class BookingService {
     return createdClient.id;
   }
 
-  async getAvailability({ serviceId, date }: AvailabilityQuery) {
+  private slotOverlapsExistingRange(
+    slotStart: Date,
+    slotEnd: Date,
+    blockedSlots: OccupiedRangeRow[],
+    conflictingHolds: HoldRangeRow[],
+    conflictingBookings: BookingRangeRow[],
+  ) {
+    const slotStartTime = slotStart.getTime();
+    const slotEndTime = slotEnd.getTime();
+
+    const overlapsBlocked = blockedSlots.some(
+      (item) =>
+        new Date(item.starts_at).getTime() < slotEndTime &&
+        new Date(item.ends_at).getTime() > slotStartTime,
+    );
+    const overlapsHold = conflictingHolds.some(
+      (item) =>
+        new Date(item.starts_at).getTime() < slotEndTime &&
+        new Date(item.ends_at).getTime() > slotStartTime,
+    );
+    const overlapsBooking = conflictingBookings.some(
+      (item) =>
+        new Date(item.slot_starts_at).getTime() < slotEndTime &&
+        new Date(item.slot_ends_at).getTime() > slotStartTime,
+    );
+
+    return overlapsBlocked || overlapsHold || overlapsBooking;
+  }
+
+  private async listAvailableTimedSlots(
+    serviceId: string,
+    date: string,
+    defaultSlotLengthMinutes?: number | null,
+  ) {
     const client = this.assertSupabase();
-    const service = await this.fetchService(serviceId);
-
-    if (service.booking_kind === "stay") {
-      throw new HttpError(
-        400,
-        "Stay-based services use a date-range intake flow instead of timed slot availability.",
-      );
-    }
-
     const weekday = getWeekday(date);
     const { dayStartIso, dayEndIso } = getDayBounds(date);
 
     const [
       { data: windows, error: windowsError },
+      { data: manualSlots, error: manualSlotsError },
       { data: blockedSlots, error: blockedError },
       { data: conflictingHolds, error: holdsError },
       { data: conflictingBookings, error: bookingsError },
@@ -175,6 +241,13 @@ class BookingService {
         .eq("service_id", serviceId)
         .eq("weekday", weekday)
         .order("start_time", { ascending: true }),
+      client
+        .from("manual_availability_slots")
+        .select("starts_at, ends_at")
+        .eq("service_id", serviceId)
+        .lt("starts_at", dayEndIso)
+        .gt("ends_at", dayStartIso)
+        .order("starts_at", { ascending: true }),
       client
         .from("blocked_slots")
         .select("starts_at, ends_at")
@@ -199,57 +272,97 @@ class BookingService {
     ]);
 
     const queryError =
-      windowsError ?? blockedError ?? holdsError ?? bookingsError;
+      windowsError ??
+      (isMissingRelationError(manualSlotsError) ? null : manualSlotsError) ??
+      blockedError ??
+      holdsError ??
+      bookingsError;
 
     if (queryError) {
-      throw new HttpError(500, "Unable to load availability.", queryError.message);
+      throw new HttpError(
+        isMissingRelationError(queryError) ? 503 : 500,
+        isMissingRelationError(queryError)
+          ? "The Supabase database schema has not been applied to the hosted project yet."
+          : "Unable to load availability.",
+        queryError.message,
+      );
     }
 
-    const slots =
-      (windows as AvailabilityWindowRow[] | null)?.flatMap((window) => {
-        const slotsForWindow: Array<{
-          startsAt: string;
-          endsAt: string;
-          label: string;
-        }> = [];
+    const blockedRanges = (blockedSlots ?? []) as OccupiedRangeRow[];
+    const holdRanges = (conflictingHolds ?? []) as HoldRangeRow[];
+    const bookingRanges = (conflictingBookings ?? []) as BookingRangeRow[];
+    const slotMap = new Map<string, AvailabilitySlot>();
 
-        const slotLength = window.slot_length_minutes || service.duration_minutes || 60;
-        let cursor = toLagosDateTime(date, window.start_time);
-        const windowEnd = toLagosDateTime(date, window.end_time);
+    const registerSlot = (slotStart: Date, slotEnd: Date) => {
+      if (slotStart >= slotEnd) {
+        return;
+      }
 
-        while (cursor.getTime() + slotLength * 60_000 <= windowEnd.getTime()) {
-          const slotStart = new Date(cursor);
-          const slotEnd = new Date(cursor.getTime() + slotLength * 60_000);
+      if (
+        this.slotOverlapsExistingRange(
+          slotStart,
+          slotEnd,
+          blockedRanges,
+          holdRanges,
+          bookingRanges,
+        )
+      ) {
+        return;
+      }
 
-          const overlapsBlocked = (blockedSlots ?? []).some(
-            (item) =>
-              new Date(item.starts_at).getTime() < slotEnd.getTime() &&
-              new Date(item.ends_at).getTime() > slotStart.getTime(),
-          );
-          const overlapsHold = (conflictingHolds ?? []).some(
-            (item) =>
-              new Date(item.starts_at).getTime() < slotEnd.getTime() &&
-              new Date(item.ends_at).getTime() > slotStart.getTime(),
-          );
-          const overlapsBooking = (conflictingBookings ?? []).some(
-            (item) =>
-              new Date(item.slot_starts_at).getTime() < slotEnd.getTime() &&
-              new Date(item.slot_ends_at).getTime() > slotStart.getTime(),
-          );
+      const startsAt = slotStart.toISOString();
+      const endsAt = slotEnd.toISOString();
+      const slotKey = createSlotKey(startsAt, endsAt);
 
-          if (!overlapsBlocked && !overlapsHold && !overlapsBooking) {
-            slotsForWindow.push({
-              startsAt: slotStart.toISOString(),
-              endsAt: slotEnd.toISOString(),
-              label: `${formatTimeLabel(slotStart)} - ${formatTimeLabel(slotEnd)}`,
-            });
-          }
+      if (!slotMap.has(slotKey)) {
+        slotMap.set(slotKey, {
+          startsAt,
+          endsAt,
+          label: createSlotLabel(slotStart, slotEnd),
+        });
+      }
+    };
 
-          cursor = new Date(cursor.getTime() + slotLength * 60_000);
-        }
+    ((windows ?? []) as AvailabilityWindowRow[]).forEach((window) => {
+      const slotLength = window.slot_length_minutes || defaultSlotLengthMinutes || 60;
+      const windowStart = toLagosDateTime(date, window.start_time);
+      const windowEnd = toLagosDateTime(date, window.end_time);
+      let cursor = new Date(windowStart);
 
-        return slotsForWindow;
-      }) ?? [];
+      while (cursor.getTime() + slotLength * 60_000 <= windowEnd.getTime()) {
+        const slotStart = new Date(cursor);
+        const slotEnd = new Date(cursor.getTime() + slotLength * 60_000);
+
+        registerSlot(slotStart, slotEnd);
+        cursor = new Date(cursor.getTime() + slotLength * 60_000);
+      }
+    });
+
+    if (!isMissingRelationError(manualSlotsError)) {
+      ((manualSlots ?? []) as ManualAvailabilitySlotRow[]).forEach((slot) => {
+        registerSlot(new Date(slot.starts_at), new Date(slot.ends_at));
+      });
+    }
+
+    return Array.from(slotMap.values()).sort((left, right) =>
+      left.startsAt.localeCompare(right.startsAt),
+    );
+  }
+
+  async getAvailability({ serviceId, date }: AvailabilityQuery) {
+    const service = await this.fetchService(serviceId);
+
+    if (service.booking_kind === "stay") {
+      throw new HttpError(
+        400,
+        "Stay-based services use a date-range intake flow instead of timed slot availability.",
+      );
+    }
+    const slots = await this.listAvailableTimedSlots(
+      serviceId,
+      date,
+      service.duration_minutes,
+    );
 
     return {
       serviceId,
@@ -313,6 +426,34 @@ class BookingService {
 
       selectedPackage = packageRow;
       totalAmountKobo = packageRow.package_price_kobo * input.quantity;
+    }
+
+    const requestedStart = new Date(input.startsAt);
+    const requestedEnd = new Date(input.endsAt);
+
+    if (
+      Number.isNaN(requestedStart.valueOf()) ||
+      Number.isNaN(requestedEnd.valueOf())
+    ) {
+      throw new HttpError(400, "The selected time slot is not a valid date-time range.");
+    }
+
+    const requestedDate = getLagosDateKey(requestedStart);
+    const openSlots = await this.listAvailableTimedSlots(
+      input.serviceId,
+      requestedDate,
+      service.duration_minutes,
+    );
+    const requestedSlotKey = createSlotKey(
+      requestedStart.toISOString(),
+      requestedEnd.toISOString(),
+    );
+
+    if (!openSlots.some((slot) => createSlotKey(slot.startsAt, slot.endsAt) === requestedSlotKey)) {
+      throw new HttpError(
+        409,
+        "That time slot is no longer open to clients. Please choose another available time.",
+      );
     }
 
     const now = new Date().toISOString();

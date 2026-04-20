@@ -1,0 +1,24 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { useState } from "react";
+import { AlertCircle, CheckCircle2, Info, TriangleAlert, X } from "lucide-react";
+import { cn } from "./helpers";
+const icons = {
+    success: CheckCircle2,
+    error: AlertCircle,
+    warning: TriangleAlert,
+    info: Info,
+};
+const styles = {
+    success: "border-[color-mix(in_oklab,var(--color-success)_26%,transparent)] bg-[color-mix(in_oklab,var(--color-success)_12%,transparent)] text-[var(--color-success)]",
+    error: "border-[color-mix(in_oklab,var(--color-danger)_26%,transparent)] bg-[color-mix(in_oklab,var(--color-danger)_12%,transparent)] text-[var(--color-danger)]",
+    warning: "border-[color-mix(in_oklab,var(--color-warning)_26%,transparent)] bg-[color-mix(in_oklab,var(--color-warning)_12%,transparent)] text-[var(--color-warning)]",
+    info: "border-[color-mix(in_oklab,var(--color-info)_26%,transparent)] bg-[color-mix(in_oklab,var(--color-info)_12%,transparent)] text-[var(--color-info)]",
+};
+export function Feedback({ variant = "info", title, message, dismissible, className, actions, }) {
+    const [visible, setVisible] = useState(true);
+    const Icon = icons[variant];
+    if (!visible) {
+        return null;
+    }
+    return (_jsxs("div", { className: cn("flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm", styles[variant], className), children: [_jsx(Icon, { className: "mt-0.5 h-5 w-5 shrink-0" }), _jsxs("div", { className: "min-w-0 flex-1", children: [title ? _jsx("p", { className: "font-semibold", children: title }) : null, _jsx("p", { className: cn("leading-6", title && "mt-1"), children: message }), actions ? _jsx("div", { className: "mt-3 flex flex-wrap gap-2", children: actions }) : null] }), dismissible ? (_jsx("button", { type: "button", onClick: () => setVisible(false), className: "rounded-full p-1 text-current/80 transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current/20", "aria-label": "Dismiss message", children: _jsx(X, { className: "h-4 w-4" }) })) : null] }));
+}

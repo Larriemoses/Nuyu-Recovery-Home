@@ -34,3 +34,5 @@ enable_refresh_token_rotation = true
 enabled = true
 policy = "per_worker"
 
+[functions.app-api]
+verify_jwt = false

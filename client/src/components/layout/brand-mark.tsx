@@ -9,8 +9,8 @@ const styles = {
   sm: {
     container: "gap-3",
     image: "h-12 w-12",
-    title: "text-lg sm:text-xl",
-    subtitle: "text-[0.62rem] tracking-[0.34em]",
+    title: "text-base leading-5 sm:text-xl sm:leading-normal",
+    subtitle: "hidden text-[0.62rem] tracking-[0.34em] sm:block",
   },
   md: {
     container: "gap-4",

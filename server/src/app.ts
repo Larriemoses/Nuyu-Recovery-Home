@@ -9,12 +9,47 @@ import { healthRouter } from "./routes/health.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { reportsRouter } from "./routes/reports.js";
 
+function getAllowedOrigins() {
+  const configuredOrigins = [
+    env.CLIENT_URL,
+    ...(env.CLIENT_URLS
+      ? env.CLIENT_URLS.split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : []),
+  ];
+
+  return new Set(configuredOrigins);
+}
+
+function isAllowedDevelopmentOrigin(origin: string) {
+  return /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+}
+
 export function createApp() {
   const app = express();
+  const allowedOrigins = getAllowedOrigins();
 
   app.use(
     cors({
-      origin: env.CLIENT_URL,
+      origin(origin, callback) {
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+
+        if (allowedOrigins.has(origin) || isAllowedDevelopmentOrigin(origin)) {
+          callback(null, true);
+          return;
+        }
+
+        callback(
+          new HttpError(
+            403,
+            `Origin ${origin} is not allowed to access this server.`,
+          ),
+        );
+      },
     }),
   );
   app.use(express.json());

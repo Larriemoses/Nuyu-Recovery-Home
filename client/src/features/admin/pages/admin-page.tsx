@@ -1,280 +1,414 @@
+import {
+  ArrowRight,
+  BriefcaseBusiness,
+  CalendarClock,
+  CircleDollarSign,
+  Clock3,
+  HeartHandshake,
+  Sparkles,
+  UsersRound,
+} from "lucide-react";
 import { Link } from "react-router-dom";
-import { SectionCard } from "../../../components/ui/section-card";
+import {
+  Avatar,
+  Badge,
+  Card,
+  EmptyState,
+  Feedback,
+  Skeleton,
+} from "../../../components/ui";
 import { formatCurrency } from "../../../utils/currency";
-import { AdminEmptyState } from "../components/admin-empty-state";
-import { AdminStatusPill } from "../components/admin-status-pill";
 import { useAdminPortal } from "../context/admin-portal-provider";
-import { formatBookingSchedule, formatDateTime } from "../utils/admin-format";
+import { formatBookingSchedule } from "../utils/admin-format";
 
 const quickActions = [
   {
     to: "/admin/bookings",
     title: "Review bookings",
-    description: "Check every appointment, package booking, and stay request.",
+    description: "Open the booking queue and move the next client forward",
+  },
+  {
+    to: "/admin/operations",
+    title: "Update availability",
+    description: "Adjust open times, special slots, and blocked periods",
   },
   {
     to: "/admin/reports",
-    title: "Open reports",
-    description: "View daily, weekly, monthly, and yearly reports and export them.",
+    title: "Export reports",
+    description: "Download the latest daily, weekly, monthly, or yearly view",
   },
   {
     to: "/admin/services",
     title: "Check services",
-    description: "Review pricing, packages, and availability windows.",
+    description: "Update pricing, packages, and what clients can currently book",
   },
-  {
-    to: "/admin/operations",
-    title: "Watch operations",
-    description: "See holds, blocked slots, and payment readiness in one place.",
-  },
-];
+] as const;
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-28 w-full" />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Skeleton className="h-36 w-full" />
+        <Skeleton className="h-36 w-full" />
+        <Skeleton className="h-36 w-full" />
+        <Skeleton className="h-36 w-full" />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <Skeleton className="h-72 w-full" />
+        <Skeleton className="h-72 w-full" />
+      </div>
+    </div>
+  );
+}
+
+type MetricTileProps = {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  hint: string;
+};
+
+function MetricTile({ icon, label, value, hint }: MetricTileProps) {
+  return (
+    <Card variant="default" className="h-full">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--color-surface-overlay)] text-[var(--color-primary)]">
+            {icon}
+          </span>
+          <Badge variant="info">live</Badge>
+        </div>
+        <div>
+          <p className="text-sm text-[var(--color-text-muted)]">{label}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[var(--color-text)]">
+            {value}
+          </p>
+        </div>
+        <p className="text-sm leading-6 text-[var(--color-text-muted)]">{hint}</p>
+      </div>
+    </Card>
+  );
+}
+
+function getMomentumWidthClass(bookingsCount: number, strongestCount: number) {
+  const ratio = strongestCount > 0 ? bookingsCount / strongestCount : 0;
+
+  if (ratio >= 0.95) {
+    return "w-full";
+  }
+
+  if (ratio >= 0.8) {
+    return "w-10/12";
+  }
+
+  if (ratio >= 0.65) {
+    return "w-8/12";
+  }
+
+  if (ratio >= 0.5) {
+    return "w-6/12";
+  }
+
+  if (ratio >= 0.35) {
+    return "w-5/12";
+  }
+
+  if (ratio >= 0.2) {
+    return "w-4/12";
+  }
+
+  return "w-3/12";
+}
 
 export function AdminPage() {
   const { data, isLoading, errorMessage } = useAdminPortal();
 
   if (isLoading) {
-    return (
-      <SectionCard eyebrow="Admin Home" title="Loading admin home">
-        <div className="rounded-[1.5rem] bg-white/75 p-6 text-sm text-[var(--nuyu-muted)]">
-          Loading live admin data...
-        </div>
-      </SectionCard>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (errorMessage || !data) {
     return (
-      <SectionCard eyebrow="Admin Home" title="Admin home could not be loaded">
-        <AdminEmptyState
-          title="Admin data is unavailable"
-          description={errorMessage ?? "No admin data was returned."}
+      <div className="space-y-4">
+        <Feedback
+          variant="error"
+          title="We couldn’t load the dashboard"
+          message={errorMessage ?? "Something interrupted the admin data load, so the overview is empty right now."}
         />
-      </SectionCard>
+        <EmptyState
+          icon={<Sparkles className="h-5 w-5" />}
+          heading="Your dashboard isn’t ready yet"
+          subtext="Refresh the page once the server is back up, and we’ll bring your latest bookings, services, and reports right back."
+        />
+      </div>
     );
   }
 
   const waitingForReview = data.metrics.pendingBookings + data.metrics.heldBookings;
+  const latestBookings = data.recentBookings.slice(0, 4);
+  const topServices = data.servicePerformance.slice(0, 4);
+  const highestPressureMessage =
+    waitingForReview > 0
+      ? `${waitingForReview} booking${waitingForReview === 1 ? "" : "s"} need a closer look today`
+      : "Your booking queue looks calm right now";
 
   return (
-    <div className="space-y-8">
-      <SectionCard
-        eyebrow="Admin Home"
-        title="Simple view of what needs attention today"
-        description="Use this page to see the most important numbers first, then jump straight to the next task without needing technical tools."
-      >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
-              Waiting for review
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-[var(--nuyu-ink)]">
-              {waitingForReview}
-            </p>
-            <p className="mt-2 text-sm text-[var(--nuyu-muted)]">
-              Pending and held bookings that may need attention
-            </p>
-          </div>
+    <div className="space-y-4">
+      <Feedback
+        variant={waitingForReview > 0 ? "warning" : "success"}
+        title={waitingForReview > 0 ? "A few items need your attention" : "You’re in a good place"}
+        message={
+          data.setup.paystackConfigured
+            ? `${highestPressureMessage}, and payment tracking is already connected.`
+            : `${highestPressureMessage}. Payments can be added later, so you can keep focusing on bookings, schedules, and reports for now.`
+        }
+      />
 
-          <div className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
-              Total clients
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-[var(--nuyu-ink)]">
-              {data.metrics.totalClients}
-            </p>
-            <p className="mt-2 text-sm text-[var(--nuyu-muted)]">
-              Client records currently stored in the system
-            </p>
-          </div>
-
-          <div className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
-              Active services
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-[var(--nuyu-ink)]">
-              {data.metrics.activeServicesCount}
-            </p>
-            <p className="mt-2 text-sm text-[var(--nuyu-muted)]">
-              Live services the team can currently offer
-            </p>
-          </div>
-
-          <div className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
-              Revenue tracked
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-[var(--nuyu-ink)]">
-              {formatCurrency(data.metrics.totalRevenueKobo)}
-            </p>
-            <p className="mt-2 text-sm text-[var(--nuyu-muted)]">
-              Paid or confirmed value saved so far
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {quickActions.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className="rounded-[1.5rem] border border-[rgba(47,93,50,0.08)] bg-[var(--nuyu-cream)] p-5 transition hover:bg-white"
-            >
-              <p className="text-sm font-semibold text-[var(--nuyu-ink)]">{item.title}</p>
-              <p className="mt-2 text-sm leading-6 text-[var(--nuyu-muted)]">
-                {item.description}
-              </p>
-            </Link>
-          ))}
-        </div>
-      </SectionCard>
-
-      <SectionCard
-        eyebrow="Ready Now"
-        title="What is working today"
-        description="This keeps the admin team clear on what can be tested now and what still comes later."
-      >
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="rounded-[1.5rem] bg-[var(--nuyu-cream)] p-5">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[var(--nuyu-ink)]">Booking flow</p>
-              <AdminStatusPill label="Ready" tone="green" />
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[var(--nuyu-muted)]">
-              The public site and booking flow are ready to test up to the payment handoff step.
-            </p>
-          </div>
-
-          <div className="rounded-[1.5rem] bg-[var(--nuyu-cream)] p-5">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[var(--nuyu-ink)]">Admin portal</p>
-              <AdminStatusPill label="Ready" tone="green" />
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[var(--nuyu-muted)]">
-              Admin login, overview pages, and private reports are all live and ready for testing.
-            </p>
-          </div>
-
-          <div className="rounded-[1.5rem] bg-[var(--nuyu-cream)] p-5">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[var(--nuyu-ink)]">Paystack</p>
-              <AdminStatusPill
-                label={data.setup.paystackConfigured ? "Ready" : "Later"}
-                tone={data.setup.paystackConfigured ? "green" : "gold"}
-              />
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[var(--nuyu-muted)]">
-              {data.setup.paystackConfigured
-                ? "Payment is connected."
-                : "Payment is still the final stage, so the app should be tested through booking and admin review first."}
-            </p>
-          </div>
-        </div>
-      </SectionCard>
-
-      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <SectionCard
-          eyebrow="Recent bookings"
-          title="Latest activity"
-          description="These are the newest records the admin team may want to review first."
-        >
-          <div className="space-y-3">
-            {data.recentBookings.length ? (
-              data.recentBookings.map((booking) => (
-                <article
-                  key={booking.id}
-                  className="rounded-[1.5rem] border border-[rgba(47,93,50,0.08)] bg-white/78 p-4 text-sm text-[var(--nuyu-muted)]"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-[var(--nuyu-ink)]">{booking.clientName}</p>
-                      <p className="mt-1">{booking.serviceName}</p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <AdminStatusPill label={booking.bookingKind} tone="green" />
-                      <AdminStatusPill label={booking.status} tone="ink" />
-                    </div>
-                  </div>
-
-                  <p className="mt-3">{formatBookingSchedule(booking)}</p>
-                  <p className="mt-2 font-semibold text-[var(--nuyu-ink)]">
-                    {formatCurrency(booking.totalAmountKobo)}
-                  </p>
-                </article>
-              ))
-            ) : (
-              <AdminEmptyState
-                title="No bookings yet"
-                description="When people start using the public booking flow, the newest records will appear here."
-              />
-            )}
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          eyebrow="Active holds"
-          title="Reservations waiting on the next step"
-          description="These are the time-sensitive reservations that are still being held."
-        >
-          <div className="space-y-3">
-            {data.activeHolds.length ? (
-              data.activeHolds.map((hold) => (
-                <article
-                  key={hold.id}
-                  className="rounded-[1.5rem] border border-[rgba(47,93,50,0.08)] bg-white/78 p-4 text-sm text-[var(--nuyu-muted)]"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-[var(--nuyu-ink)]">{hold.serviceName}</p>
-                      <p className="mt-1">{hold.clientEmail}</p>
-                    </div>
-                    <AdminStatusPill label="Hold" tone="gold" />
-                  </div>
-                  <p className="mt-3">{formatDateTime(hold.startsAt)}</p>
-                  <p className="mt-1">Expires {formatDateTime(hold.expiresAt)}</p>
-                </article>
-              ))
-            ) : (
-              <AdminEmptyState
-                title="No active holds right now"
-                description="When a booking is temporarily reserved, it will show here."
-              />
-            )}
-          </div>
-        </SectionCard>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricTile
+          icon={<Clock3 className="h-5 w-5" />}
+          label="Needs attention"
+          value={waitingForReview}
+          hint="Pending and held bookings that may need a follow-up"
+        />
+        <MetricTile
+          icon={<CircleDollarSign className="h-5 w-5" />}
+          label="Tracked revenue"
+          value={formatCurrency(data.metrics.totalRevenueKobo)}
+          hint="Paid or confirmed value already visible in the system"
+        />
+        <MetricTile
+          icon={<UsersRound className="h-5 w-5" />}
+          label="Clients"
+          value={data.metrics.totalClients}
+          hint="People currently stored in your admin workspace"
+        />
+        <MetricTile
+          icon={<BriefcaseBusiness className="h-5 w-5" />}
+          label="Active services"
+          value={data.metrics.activeServicesCount}
+          hint="Services clients can currently browse and book"
+        />
       </div>
 
-      <SectionCard
-        eyebrow="Service snapshot"
-        title="Where demand is building"
-        description="This shows which services are already attracting the most activity."
-      >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {data.servicePerformance.length ? (
-            data.servicePerformance.map((item) => (
-              <article
-                key={item.serviceId}
-                className="rounded-[1.5rem] bg-white/78 p-5 text-sm text-[var(--nuyu-muted)]"
-              >
-                <p className="font-semibold text-[var(--nuyu-ink)]">{item.serviceName}</p>
-                <p className="mt-2 capitalize">{item.bookingKind}</p>
-                <p className="mt-4">{item.bookingsCount} bookings so far</p>
-                <p className="mt-1">
-                  {item.pendingCount} pending and {item.heldCount} held
+      <div className="grid gap-4 xl:grid-cols-[1.18fr_0.82fr]">
+        <Card
+          variant="elevated"
+          header={
+            <div className="space-y-1">
+              <p className="text-lg font-semibold text-[var(--color-text)]">What you can do next</p>
+              <p className="text-sm text-[var(--color-text-muted)]">
+                Keep the next best actions close, so nothing important feels buried
+              </p>
+            </div>
+          }
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            {quickActions.map((action) => (
+              <Link key={action.to} to={action.to} className="group h-full">
+                <div className="h-full rounded-2xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] px-4 py-4 transition duration-200 group-hover:border-[var(--color-border)] group-hover:bg-[var(--color-surface-raised)] group-active:scale-[0.98]">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-[var(--color-text)]">{action.title}</p>
+                    <ArrowRight className="h-4 w-4 text-[var(--color-text-muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-text)]" />
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+                    {action.description}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </Card>
+
+        <Card
+          variant="default"
+          header={
+            <div className="space-y-1">
+              <p className="text-lg font-semibold text-[var(--color-text)]">Operations pulse</p>
+              <p className="text-sm text-[var(--color-text-muted)]">
+                The quickest health check for the admin side of the business
+              </p>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            <div className="rounded-2xl bg-[var(--color-surface-overlay)] px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-[var(--color-text)]">Booking flow</p>
+                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                    Clients can already browse services and hold time slots
+                  </p>
+                </div>
+                <Badge variant="success" withDot>
+                  ready
+                </Badge>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-[var(--color-surface-overlay)] px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-[var(--color-text)]">Admin controls</p>
+                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                    You can manage services, clients, schedules, and reports now
+                  </p>
+                </div>
+                <Badge variant="success" withDot>
+                  ready
+                </Badge>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-[var(--color-surface-overlay)] px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-[var(--color-text)]">Paystack</p>
+                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                    Add payments after the booking and admin flow feel right
+                  </p>
+                </div>
+                <Badge variant={data.setup.paystackConfigured ? "success" : "warning"} withDot>
+                  {data.setup.paystackConfigured ? "connected" : "later"}
+                </Badge>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] px-4 py-4">
+                <p className="text-sm text-[var(--color-text-muted)]">Active holds</p>
+                <p className="mt-2 text-2xl font-semibold text-[var(--color-text)]">
+                  {data.metrics.activeHolds}
                 </p>
-                <p className="mt-3 font-semibold text-[var(--nuyu-ink)]">
-                  {formatCurrency(item.estimatedValueKobo)}
+              </div>
+              <div className="rounded-2xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] px-4 py-4">
+                <p className="text-sm text-[var(--color-text-muted)]">Stay requests</p>
+                <p className="mt-2 text-2xl font-semibold text-[var(--color-text)]">
+                  {data.metrics.stayRequests}
                 </p>
-              </article>
-            ))
-          ) : (
-            <AdminEmptyState
-              title="Service activity will appear here"
-              description="Once bookings come in, this section will show which services are attracting demand."
-            />
-          )}
-        </div>
-      </SectionCard>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
+        <Card
+          variant="default"
+          header={
+            <div className="space-y-1">
+              <p className="text-lg font-semibold text-[var(--color-text)]">Recent activity</p>
+              <p className="text-sm text-[var(--color-text-muted)]">
+                The newest bookings stay close, so you can scan them without extra clicks
+              </p>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            {latestBookings.length ? (
+              latestBookings.map((booking) => (
+                <div
+                  key={booking.id}
+                  className="rounded-2xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] px-4 py-4"
+                >
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <Avatar name={booking.clientName} size="md" />
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[var(--color-text)]">{booking.clientName}</p>
+                        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                          {booking.serviceName}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+                          {formatBookingSchedule(booking)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="info">{booking.bookingKind}</Badge>
+                      <Badge
+                        variant={
+                          booking.status === "confirmed"
+                            ? "success"
+                            : booking.status === "pending" || booking.status === "held"
+                              ? "warning"
+                              : booking.status === "cancelled"
+                                ? "danger"
+                                : "default"
+                        }
+                      >
+                        {booking.status}
+                      </Badge>
+                      <Badge variant="default">{formatCurrency(booking.totalAmountKobo)}</Badge>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <EmptyState
+                icon={<CalendarClock className="h-5 w-5" />}
+                heading="No bookings yet"
+                subtext="Once clients start booking, their latest activity will appear here and give you a simple place to start"
+              />
+            )}
+          </div>
+        </Card>
+
+        <Card
+          variant="default"
+          header={
+            <div className="space-y-1">
+              <p className="text-lg font-semibold text-[var(--color-text)]">Service momentum</p>
+              <p className="text-sm text-[var(--color-text-muted)]">
+                See which services are pulling the most demand right now
+              </p>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            {topServices.length ? (
+              topServices.map((service, index) => {
+                const strongestCount = Math.max(topServices[0]?.bookingsCount ?? 1, 1);
+
+                return (
+                  <div key={service.serviceId} className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-[var(--color-text)]">
+                          {service.serviceName}
+                        </p>
+                        <p className="text-sm text-[var(--color-text-muted)]">
+                          {service.pendingCount} pending, {service.heldCount} held
+                        </p>
+                      </div>
+                      <Badge variant={index === 0 ? "success" : "info"}>
+                        {service.bookingsCount} booked
+                      </Badge>
+                    </div>
+                    <div className="h-2.5 rounded-full bg-[var(--color-surface-overlay)]">
+                      <div
+                        className={[
+                          "h-2.5 rounded-full bg-[var(--color-primary)] transition-all duration-300",
+                          getMomentumWidthClass(service.bookingsCount, strongestCount),
+                        ].join(" ")}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-sm text-[var(--color-text-muted)]">
+                      <span className="capitalize">{service.bookingKind}</span>
+                      <span>{formatCurrency(service.estimatedValueKobo)}</span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <EmptyState
+                icon={<HeartHandshake className="h-5 w-5" />}
+                heading="Service momentum will show up here"
+                subtext="As new bookings come in, this panel will help you spot which services are gaining traction first"
+              />
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

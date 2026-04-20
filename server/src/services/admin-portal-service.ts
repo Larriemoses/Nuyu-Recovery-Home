@@ -73,6 +73,14 @@ type BlockedSlotRow = {
   created_at: string;
 };
 
+type ManualAvailabilitySlotRow = {
+  id: string;
+  service_id: string;
+  starts_at: string;
+  ends_at: string;
+  created_at: string;
+};
+
 type ClientRow = {
   id: string;
   full_name: string;
@@ -93,11 +101,34 @@ type PaymentRow = {
   created_at: string;
 };
 
+type CreateAvailabilityWindowInput = {
+  serviceId: string;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  slotLengthMinutes: number;
+  capacity: number;
+};
+
+type CreateBlockedSlotInput = {
+  serviceId: string;
+  startsAt: string;
+  endsAt: string;
+  reason?: string;
+};
+
+type CreateManualAvailabilitySlotInput = {
+  serviceId: string;
+  startsAt: string;
+  endsAt: string;
+};
+
 type PortalRows = {
   serviceRows: ServiceRow[];
   bookingRows: BookingRow[];
   holdRows: HoldRow[];
   blockedSlotRows: BlockedSlotRow[];
+  manualAvailabilitySlotRows: ManualAvailabilitySlotRow[];
   clientRows: ClientRow[];
   paymentRows: PaymentRow[];
 };
@@ -119,6 +150,10 @@ function requireSupabase() {
   }
 
   return supabaseAdmin;
+}
+
+function isMissingRelationError(error?: { code?: string } | null) {
+  return error?.code === "PGRST205";
 }
 
 function sumValues<T>(items: T[], getValue: (item: T) => number) {
@@ -194,6 +229,25 @@ function parseAnchorDate(value?: string) {
   }
 
   return parsedDate;
+}
+
+function normalizeTimeInput(value: string) {
+  const trimmed = value.trim();
+
+  if (!/^\d{2}:\d{2}(:\d{2})?$/.test(trimmed)) {
+    throw new HttpError(400, "Time values must use the HH:MM or HH:MM:SS format.");
+  }
+
+  return trimmed.length === 5 ? `${trimmed}:00` : trimmed;
+}
+
+function getTimeValue(value: string) {
+  const [hours, minutes, seconds] = value.split(":").map((item) => Number(item));
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function getLagosDateKey(value: Date) {
+  return new Date(value.getTime() + 60 * 60_000).toISOString().slice(0, 10);
 }
 
 function isWithinRange(
@@ -284,6 +338,7 @@ export class AdminPortalService {
       { data: bookings, error: bookingsError },
       { data: holds, error: holdsError },
       { data: blockedSlots, error: blockedSlotsError },
+      { data: manualAvailabilitySlots, error: manualAvailabilitySlotsError },
       { data: clients, error: clientsError },
       { data: payments, error: paymentsError },
     ] = await Promise.all([
@@ -308,6 +363,10 @@ export class AdminPortalService {
         .select("id, service_id, starts_at, ends_at, reason, created_at")
         .order("starts_at", { ascending: true }),
       client
+        .from("manual_availability_slots")
+        .select("id, service_id, starts_at, ends_at, created_at")
+        .order("starts_at", { ascending: true }),
+      client
         .from("clients")
         .select("id, full_name, email, phone, notes, created_at")
         .order("created_at", { ascending: false }),
@@ -322,6 +381,9 @@ export class AdminPortalService {
       bookingsError ??
       holdsError ??
       blockedSlotsError ??
+      (isMissingRelationError(manualAvailabilitySlotsError)
+        ? null
+        : manualAvailabilitySlotsError) ??
       clientsError ??
       paymentsError;
 
@@ -338,6 +400,9 @@ export class AdminPortalService {
       bookingRows: (bookings ?? []) as BookingRow[],
       holdRows: (holds ?? []) as HoldRow[],
       blockedSlotRows: (blockedSlots ?? []) as BlockedSlotRow[],
+      manualAvailabilitySlotRows: isMissingRelationError(manualAvailabilitySlotsError)
+        ? []
+        : ((manualAvailabilitySlots ?? []) as ManualAvailabilitySlotRow[]),
       clientRows: (clients ?? []) as ClientRow[],
       paymentRows: (payments ?? []) as PaymentRow[],
     };
@@ -349,6 +414,7 @@ export class AdminPortalService {
       bookingRows,
       holdRows,
       blockedSlotRows,
+      manualAvailabilitySlotRows,
       clientRows,
       paymentRows,
     } = await this.loadPortalRows();
@@ -518,6 +584,14 @@ export class AdminPortalService {
           reason: item.reason,
           createdAt: item.created_at,
         })),
+        manualAvailabilitySlots: manualAvailabilitySlotRows.map((item) => ({
+          id: item.id,
+          serviceId: item.service_id,
+          serviceName: servicesById.get(item.service_id)?.name ?? "Unknown service",
+          startsAt: item.starts_at,
+          endsAt: item.ends_at,
+          createdAt: item.created_at,
+        })),
         availabilityWindows: serviceRows.flatMap((service) =>
           (service.availability_windows ?? []).map((window) => ({
             id: window.id,
@@ -571,6 +645,467 @@ export class AdminPortalService {
           count: bookingRows.filter((item) => item.status === status).length,
         })),
       },
+    };
+  }
+
+  async createAvailabilityWindow(input: CreateAvailabilityWindowInput) {
+    const client = requireSupabase();
+
+    const service = await this.fetchServiceForAdmin(input.serviceId);
+
+    if (service.booking_kind === "stay") {
+      throw new HttpError(
+        400,
+        "Recovery-home stay services do not use timed availability windows.",
+      );
+    }
+
+    const startTime = normalizeTimeInput(input.startTime);
+    const endTime = normalizeTimeInput(input.endTime);
+
+    if (getTimeValue(startTime) >= getTimeValue(endTime)) {
+      throw new HttpError(400, "The end time must be later than the start time.");
+    }
+
+    const windowLengthMinutes =
+      (getTimeValue(endTime) - getTimeValue(startTime)) / 60;
+
+    if (input.slotLengthMinutes > windowLengthMinutes) {
+      throw new HttpError(
+        400,
+        "The slot length must fit inside the available time window.",
+      );
+    }
+
+    const { data: existingWindows, error: existingWindowsError } = await client
+      .from("availability_windows")
+      .select("id, start_time, end_time")
+      .eq("service_id", input.serviceId)
+      .eq("weekday", input.weekday);
+
+    if (existingWindowsError) {
+      throw new HttpError(
+        500,
+        "Unable to validate the existing availability windows.",
+        existingWindowsError.message,
+      );
+    }
+
+    const overlapsExistingWindow = (existingWindows ?? []).some((window) => {
+      const existingStart = getTimeValue(window.start_time);
+      const existingEnd = getTimeValue(window.end_time);
+      const nextStart = getTimeValue(startTime);
+      const nextEnd = getTimeValue(endTime);
+
+      return nextStart < existingEnd && nextEnd > existingStart;
+    });
+
+    if (overlapsExistingWindow) {
+      throw new HttpError(
+        409,
+        "This time range overlaps an existing availability window for the same day.",
+      );
+    }
+
+    const { data: createdWindow, error: createWindowError } = await client
+      .from("availability_windows")
+      .insert({
+        service_id: input.serviceId,
+        weekday: input.weekday,
+        start_time: startTime,
+        end_time: endTime,
+        slot_length_minutes: input.slotLengthMinutes,
+        capacity: input.capacity,
+      })
+      .select(
+        "id, service_id, weekday, start_time, end_time, slot_length_minutes, capacity",
+      )
+      .single();
+
+    if (createWindowError || !createdWindow) {
+      throw new HttpError(
+        500,
+        "Unable to create the new availability window.",
+        createWindowError?.message,
+      );
+    }
+
+    return {
+      message: `Added a new availability window for ${service.name}.`,
+      window: {
+        id: createdWindow.id,
+        serviceId: createdWindow.service_id,
+        serviceName: service.name,
+        weekday: createdWindow.weekday,
+        startTime: createdWindow.start_time,
+        endTime: createdWindow.end_time,
+        slotLengthMinutes: createdWindow.slot_length_minutes,
+        capacity: createdWindow.capacity,
+      },
+    };
+  }
+
+  async deleteAvailabilityWindow(windowId: string) {
+    const client = requireSupabase();
+
+    const { data: existingWindow, error: existingWindowError } = await client
+      .from("availability_windows")
+      .select("id, service_id")
+      .eq("id", windowId)
+      .maybeSingle();
+
+    if (existingWindowError) {
+      throw new HttpError(
+        500,
+        "Unable to load the availability window before deleting it.",
+        existingWindowError.message,
+      );
+    }
+
+    if (!existingWindow) {
+      throw new HttpError(404, "That availability window could not be found.");
+    }
+
+    const service = await this.fetchServiceForAdmin(existingWindow.service_id);
+
+    const { error: deleteWindowError } = await client
+      .from("availability_windows")
+      .delete()
+      .eq("id", windowId);
+
+    if (deleteWindowError) {
+      throw new HttpError(
+        500,
+        "Unable to delete the availability window.",
+        deleteWindowError.message,
+      );
+    }
+
+    return {
+      message: `Removed an availability window from ${service.name}.`,
+    };
+  }
+
+  async createManualAvailabilitySlot(input: CreateManualAvailabilitySlotInput) {
+    const client = requireSupabase();
+    const service = await this.fetchServiceForAdmin(input.serviceId);
+
+    if (service.booking_kind === "stay") {
+      throw new HttpError(
+        400,
+        "Recovery-home stay services do not use one-off timed availability slots.",
+      );
+    }
+
+    const startsAtDate = new Date(input.startsAt);
+    const endsAtDate = new Date(input.endsAt);
+
+    if (
+      Number.isNaN(startsAtDate.valueOf()) ||
+      Number.isNaN(endsAtDate.valueOf())
+    ) {
+      throw new HttpError(400, "Manual availability times must be valid ISO date-times.");
+    }
+
+    if (startsAtDate >= endsAtDate) {
+      throw new HttpError(
+        400,
+        "The one-off available time must end after it starts.",
+      );
+    }
+
+    if (startsAtDate <= new Date()) {
+      throw new HttpError(
+        400,
+        "Please choose a future time before posting it to clients.",
+      );
+    }
+
+    if (getLagosDateKey(startsAtDate) !== getLagosDateKey(endsAtDate)) {
+      throw new HttpError(
+        400,
+        "One-off available times must stay within the same day.",
+      );
+    }
+
+    const startsAtIso = startsAtDate.toISOString();
+    const endsAtIso = endsAtDate.toISOString();
+
+    const [
+      { data: existingSlots, error: existingSlotsError },
+      { data: existingBlocks, error: existingBlocksError },
+      { data: conflictingHolds, error: conflictingHoldsError },
+      { data: conflictingBookings, error: conflictingBookingsError },
+    ] = await Promise.all([
+      client
+        .from("manual_availability_slots")
+        .select("id")
+        .eq("service_id", input.serviceId)
+        .lt("starts_at", endsAtIso)
+        .gt("ends_at", startsAtIso)
+        .limit(1),
+      client
+        .from("blocked_slots")
+        .select("id")
+        .eq("service_id", input.serviceId)
+        .lt("starts_at", endsAtIso)
+        .gt("ends_at", startsAtIso)
+        .limit(1),
+      client
+        .from("slot_holds")
+        .select("id")
+        .eq("service_id", input.serviceId)
+        .eq("status", "active")
+        .gt("expires_at", new Date().toISOString())
+        .lt("starts_at", endsAtIso)
+        .gt("ends_at", startsAtIso)
+        .limit(1),
+      client
+        .from("bookings")
+        .select("id")
+        .eq("service_id", input.serviceId)
+        .in("status", ["held", "confirmed"])
+        .lt("slot_starts_at", endsAtIso)
+        .gt("slot_ends_at", startsAtIso)
+        .limit(1),
+    ]);
+
+    const validationError =
+      existingSlotsError ??
+      existingBlocksError ??
+      conflictingHoldsError ??
+      conflictingBookingsError;
+
+    if (validationError) {
+      throw new HttpError(
+        isMissingRelationError(validationError) ? 503 : 500,
+        isMissingRelationError(validationError)
+          ? "The hosted Supabase project still needs the latest scheduling tables before manual availability can be posted."
+          : "Unable to validate the one-off available time.",
+        validationError.message,
+      );
+    }
+
+    if ((existingSlots?.length ?? 0) > 0) {
+      throw new HttpError(
+        409,
+        "This one-off available time overlaps another posted time for the same service.",
+      );
+    }
+
+    if ((existingBlocks?.length ?? 0) > 0) {
+      throw new HttpError(
+        409,
+        "This time overlaps a blocked period, so it cannot be posted to clients.",
+      );
+    }
+
+    if ((conflictingHolds?.length ?? 0) > 0 || (conflictingBookings?.length ?? 0) > 0) {
+      throw new HttpError(
+        409,
+        "This time is already reserved, so it cannot be posted as available.",
+      );
+    }
+
+    const { data: createdSlot, error: createSlotError } = await client
+      .from("manual_availability_slots")
+      .insert({
+        service_id: input.serviceId,
+        starts_at: startsAtIso,
+        ends_at: endsAtIso,
+      })
+      .select("id, service_id, starts_at, ends_at, created_at")
+      .single();
+
+    if (createSlotError || !createdSlot) {
+      throw new HttpError(
+        isMissingRelationError(createSlotError) ? 503 : 500,
+        isMissingRelationError(createSlotError)
+          ? "The hosted Supabase project still needs the latest scheduling tables before manual availability can be posted."
+          : "Unable to post the one-off available time.",
+        createSlotError?.message,
+      );
+    }
+
+    return {
+      message: `Posted a one-off available time for ${service.name}.`,
+      manualAvailabilitySlot: {
+        id: createdSlot.id,
+        serviceId: createdSlot.service_id,
+        serviceName: service.name,
+        startsAt: createdSlot.starts_at,
+        endsAt: createdSlot.ends_at,
+        createdAt: createdSlot.created_at,
+      },
+    };
+  }
+
+  async deleteManualAvailabilitySlot(slotId: string) {
+    const client = requireSupabase();
+
+    const { data: existingSlot, error: existingSlotError } = await client
+      .from("manual_availability_slots")
+      .select("id, service_id")
+      .eq("id", slotId)
+      .maybeSingle();
+
+    if (existingSlotError) {
+      throw new HttpError(
+        isMissingRelationError(existingSlotError) ? 503 : 500,
+        isMissingRelationError(existingSlotError)
+          ? "The hosted Supabase project still needs the latest scheduling tables before manual availability can be removed."
+          : "Unable to load the one-off available time before deleting it.",
+        existingSlotError.message,
+      );
+    }
+
+    if (!existingSlot) {
+      throw new HttpError(404, "That one-off available time could not be found.");
+    }
+
+    const service = await this.fetchServiceForAdmin(existingSlot.service_id);
+
+    const { error: deleteSlotError } = await client
+      .from("manual_availability_slots")
+      .delete()
+      .eq("id", slotId);
+
+    if (deleteSlotError) {
+      throw new HttpError(
+        isMissingRelationError(deleteSlotError) ? 503 : 500,
+        isMissingRelationError(deleteSlotError)
+          ? "The hosted Supabase project still needs the latest scheduling tables before manual availability can be removed."
+          : "Unable to delete the one-off available time.",
+        deleteSlotError.message,
+      );
+    }
+
+    return {
+      message: `Removed a one-off available time from ${service.name}.`,
+    };
+  }
+
+  async createBlockedSlot(input: CreateBlockedSlotInput) {
+    const client = requireSupabase();
+    const service = await this.fetchServiceForAdmin(input.serviceId);
+
+    if (service.booking_kind === "stay") {
+      throw new HttpError(
+        400,
+        "Recovery-home stay services do not use timed blocked slots in this admin flow yet.",
+      );
+    }
+
+    const startsAtDate = new Date(input.startsAt);
+    const endsAtDate = new Date(input.endsAt);
+
+    if (
+      Number.isNaN(startsAtDate.valueOf()) ||
+      Number.isNaN(endsAtDate.valueOf())
+    ) {
+      throw new HttpError(400, "Blocked slot dates must be valid ISO date-times.");
+    }
+
+    if (startsAtDate >= endsAtDate) {
+      throw new HttpError(
+        400,
+        "The blocked slot must end after it starts.",
+      );
+    }
+
+    const { data: existingBlocks, error: existingBlocksError } = await client
+      .from("blocked_slots")
+      .select("id, starts_at, ends_at")
+      .eq("service_id", input.serviceId)
+      .lt("starts_at", endsAtDate.toISOString())
+      .gt("ends_at", startsAtDate.toISOString());
+
+    if (existingBlocksError) {
+      throw new HttpError(
+        500,
+        "Unable to validate the current blocked slots.",
+        existingBlocksError.message,
+      );
+    }
+
+    if ((existingBlocks?.length ?? 0) > 0) {
+      throw new HttpError(
+        409,
+        "This blocked time overlaps another blocked time for the same service.",
+      );
+    }
+
+    const { data: createdBlock, error: createBlockError } = await client
+      .from("blocked_slots")
+      .insert({
+        service_id: input.serviceId,
+        starts_at: startsAtDate.toISOString(),
+        ends_at: endsAtDate.toISOString(),
+        reason: input.reason?.trim() || null,
+      })
+      .select("id, service_id, starts_at, ends_at, reason, created_at")
+      .single();
+
+    if (createBlockError || !createdBlock) {
+      throw new HttpError(
+        500,
+        "Unable to create the blocked time.",
+        createBlockError?.message,
+      );
+    }
+
+    return {
+      message: `Blocked a time range for ${service.name}.`,
+      blockedSlot: {
+        id: createdBlock.id,
+        serviceId: createdBlock.service_id,
+        serviceName: service.name,
+        startsAt: createdBlock.starts_at,
+        endsAt: createdBlock.ends_at,
+        reason: createdBlock.reason,
+        createdAt: createdBlock.created_at,
+      },
+    };
+  }
+
+  async deleteBlockedSlot(blockedSlotId: string) {
+    const client = requireSupabase();
+
+    const { data: existingBlock, error: existingBlockError } = await client
+      .from("blocked_slots")
+      .select("id, service_id")
+      .eq("id", blockedSlotId)
+      .maybeSingle();
+
+    if (existingBlockError) {
+      throw new HttpError(
+        500,
+        "Unable to load the blocked time before deleting it.",
+        existingBlockError.message,
+      );
+    }
+
+    if (!existingBlock) {
+      throw new HttpError(404, "That blocked time could not be found.");
+    }
+
+    const service = await this.fetchServiceForAdmin(existingBlock.service_id);
+
+    const { error: deleteBlockError } = await client
+      .from("blocked_slots")
+      .delete()
+      .eq("id", blockedSlotId);
+
+    if (deleteBlockError) {
+      throw new HttpError(
+        500,
+        "Unable to delete the blocked time.",
+        deleteBlockError.message,
+      );
+    }
+
+    return {
+      message: `Removed a blocked time from ${service.name}.`,
     };
   }
 
@@ -683,7 +1218,54 @@ export class AdminPortalService {
         paymentStatus: booking.payment_status,
         totalAmountKobo: booking.total_amount_kobo,
       })),
+      exportBookings: bookingsInRange.map((booking) => ({
+        id: booking.id,
+        createdAt: booking.created_at,
+        serviceName: servicesById.get(booking.service_id)?.name ?? "Unknown service",
+        clientName: clientsById.get(booking.client_id)?.full_name ?? "Unknown client",
+        clientEmail: clientsById.get(booking.client_id)?.email ?? null,
+        appliedOption:
+          typeof booking.metadata?.packageLabel === "string"
+            ? booking.metadata.packageLabel
+            : null,
+        bookingKind: booking.booking_kind,
+        status: booking.status,
+        paymentStatus: booking.payment_status,
+        totalAmountKobo: booking.total_amount_kobo,
+        paidAmountKobo:
+          booking.payment_status === "paid" || booking.status === "confirmed"
+            ? booking.total_amount_kobo
+            : 0,
+        slotStartsAt: booking.slot_starts_at,
+        slotEndsAt: booking.slot_ends_at,
+        checkInDate: booking.check_in_date,
+        checkOutDate: booking.check_out_date,
+      })),
     };
+  }
+
+  private async fetchServiceForAdmin(serviceId: string) {
+    const client = requireSupabase();
+
+    const { data: service, error: serviceError } = await client
+      .from("services")
+      .select("id, name, booking_kind")
+      .eq("id", serviceId)
+      .maybeSingle();
+
+    if (serviceError) {
+      throw new HttpError(
+        500,
+        "Unable to load the selected service.",
+        serviceError.message,
+      );
+    }
+
+    if (!service) {
+      throw new HttpError(404, "The selected service could not be found.");
+    }
+
+    return service;
   }
 }
 

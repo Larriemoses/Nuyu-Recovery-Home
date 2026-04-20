@@ -71,7 +71,7 @@ export function useServiceCatalog() {
               source: "fallback",
               isLoading: false,
               errorMessage:
-                "Supabase is not configured in this browser session yet, so the page is showing the local starter catalog.",
+                "The live service list is not available in this browser session yet, so the page is showing the starter service list.",
             });
           }
         });
@@ -98,8 +98,8 @@ export function useServiceCatalog() {
             isLoading: false,
             errorMessage:
               error.code === "PGRST205"
-                ? "The hosted Supabase project is connected, but the database tables have not been created yet. Showing the local starter catalog until migrations are pushed."
-                : `Supabase returned an error while loading services: ${error.message}`,
+                ? "The live service list is not fully ready yet, so the starter service list is being shown for now."
+                : `The live service list could not be loaded right now: ${error.message}`,
           });
         });
         return;
@@ -112,7 +112,7 @@ export function useServiceCatalog() {
             source: "fallback",
             isLoading: false,
             errorMessage:
-              "No live services were found in Supabase yet, so the local starter catalog is being shown.",
+              "No live services were found yet, so the starter service list is being shown.",
           });
         });
         return;

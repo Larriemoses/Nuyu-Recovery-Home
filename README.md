@@ -130,7 +130,8 @@ This system provides a **modern, automated solution** for managing bookings, pay
 
 ### Backend
 
-* Supabase (PostgreSQL, Auth, Edge Functions)
+* Express API (TypeScript)
+* Supabase (PostgreSQL, Auth)
 
 ### Payments
 
@@ -188,6 +189,25 @@ supabase/
 npm install
 npm run dev:client
 npm run dev:server
+```
+
+## Backend Auto-Start On Windows
+
+This project uses a local Express API for admin dashboard data, reporting,
+slot controls, and booking orchestration. Supabase stores the data and handles
+authentication, but it does not automatically keep the custom API running on
+your PC.
+
+To install automatic backend startup on Windows:
+
+```bash
+npm run backend:startup:install
+```
+
+To start the backend manually in the background:
+
+```bash
+npm run backend:start:bg
 ```
 
 ---

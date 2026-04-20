@@ -15,22 +15,28 @@ export function SectionCard({
   children,
 }: SectionCardProps) {
   return (
-    <section className="glass-card rounded-[2rem] p-6 sm:p-8">
-      {eyebrow ? (
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--nuyu-gold)]">
-          {eyebrow}
-        </p>
+    <section className="public-panel rounded-[1.7rem] p-4 sm:p-5">
+      <div className="border-b border-[var(--color-border-subtle)] pb-4">
+        {eyebrow ? (
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
+            {eyebrow}
+          </p>
+        ) : null}
+        <h2 className="mt-2 text-[1.24rem] font-semibold tracking-[-0.03em] text-[var(--nuyu-ink)] sm:text-[1.48rem]">
+          {title}
+        </h2>
+        {description ? (
+          <p className="mt-2 max-w-3xl text-[0.92rem] leading-6 text-[var(--nuyu-muted)] sm:text-[0.96rem]">
+            {description}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="pt-4 sm:pt-5">{children}</div>
+
+      {footer ? (
+        <div className="mt-4 border-t border-[var(--color-border-subtle)] pt-4">{footer}</div>
       ) : null}
-      <h2 className="display-font mt-3 text-2xl font-semibold text-[var(--nuyu-ink)]">
-        {title}
-      </h2>
-      {description ? (
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--nuyu-muted)]">
-          {description}
-        </p>
-      ) : null}
-      <div className="mt-6">{children}</div>
-      {footer ? <div className="mt-6">{footer}</div> : null}
     </section>
   );
 }

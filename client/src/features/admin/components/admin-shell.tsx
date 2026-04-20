@@ -1,46 +1,111 @@
-import { Link, NavLink, useNavigate } from "react-router-dom";
-import type { PropsWithChildren } from "react";
-import { BrandMark } from "../../../components/layout/brand-mark";
+import { useState, type PropsWithChildren } from "react";
+import {
+  ArrowLeft,
+  BriefcaseBusiness,
+  CalendarDays,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCcw,
+  Settings2,
+  UsersRound,
+} from "lucide-react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Button, Tooltip } from "../../../components/ui";
+import { cn } from "../../../components/ui/helpers";
 import { useAdminAuth } from "../context/admin-auth-provider";
 import { useAdminPortal } from "../context/admin-portal-provider";
 
 const navigation = [
   {
     to: "/admin",
-    label: "Home",
-    description: "Start here for the clearest summary of what needs attention.",
+    label: "Dashboard",
+    description: "See the story behind today’s bookings and follow-ups",
+    icon: LayoutDashboard,
   },
   {
     to: "/admin/bookings",
     label: "Bookings",
-    description: "See every appointment, package booking, and stay request.",
+    description: "Review new requests and move people forward with confidence",
+    icon: CalendarDays,
   },
   {
     to: "/admin/services",
     label: "Services",
-    description: "Review pricing, packages, and availability windows.",
+    description: "Keep services, pricing, and packages up to date",
+    icon: BriefcaseBusiness,
   },
   {
     to: "/admin/clients",
     label: "Clients",
-    description: "Review people, contact details, and activity.",
+    description: "Keep every client detail close and easy to scan",
+    icon: UsersRound,
   },
   {
     to: "/admin/operations",
     label: "Operations",
-    description: "Track holds, blocked slots, and payment readiness.",
+    description: "Adjust schedules, holds, blocked times, and availability",
+    icon: Settings2,
   },
   {
     to: "/admin/reports",
     label: "Reports",
-    description: "View and export daily, weekly, monthly, and yearly reports.",
+    description: "Download daily, weekly, monthly, and yearly snapshots",
+    icon: FileText,
   },
-];
+] as const;
+
+function AdminBrand({
+  compact = false,
+  showName = true,
+}: {
+  compact?: boolean;
+  showName?: boolean;
+}) {
+  return (
+    <Link
+      to="/"
+      className={cn("flex min-w-0 items-center gap-3", !showName && "justify-center")}
+    >
+      <img
+        src="/nuyu-logo.jpeg"
+        alt="Nuyu Recovery Home logo"
+        className={cn(
+          "rounded-2xl border border-[var(--color-border-subtle)] object-cover",
+          compact ? "h-10 w-10" : "h-12 w-12",
+        )}
+      />
+      {showName ? (
+        <div className="min-w-0">
+          <p
+            className={cn(
+              "truncate font-semibold uppercase tracking-[0.18em] text-[var(--nuyu-gold)]",
+              compact ? "text-[0.72rem]" : "text-sm",
+            )}
+          >
+            Nuyu Recovery Home
+          </p>
+        </div>
+      ) : null}
+    </Link>
+  );
+}
 
 export function AdminShell({ children }: PropsWithChildren) {
+  const [collapsed, setCollapsed] = useState(false);
+  const location = useLocation();
   const navigate = useNavigate();
-  const { adminUser, signOut } = useAdminAuth();
-  const { data, isLoading, refresh } = useAdminPortal();
+  const { signOut } = useAdminAuth();
+  const { isLoading, refresh } = useAdminPortal();
+  const activePage =
+    navigation.find((item) =>
+      item.to === "/admin"
+        ? location.pathname === "/admin"
+        : location.pathname.startsWith(item.to),
+    ) ?? navigation[0];
+  const isNestedPage = activePage.to !== "/admin";
 
   async function handleSignOut() {
     await signOut();
@@ -48,95 +113,162 @@ export function AdminShell({ children }: PropsWithChildren) {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,rgba(47,93,50,0.06),rgba(247,243,232,0.95))]">
-      <header className="border-b border-[rgba(47,93,50,0.08)] bg-[rgba(247,243,232,0.9)] backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-6 py-6 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
-          <Link to="/" className="inline-flex">
-            <BrandMark
-              size="sm"
-              subtitle="Private admin space for bookings, clients, services, reports, and operations"
-            />
-          </Link>
+    <div className="min-h-screen bg-[var(--color-surface)] text-[var(--color-text)]">
+      <div className="mx-auto flex min-h-screen max-w-[1440px]">
+        <aside
+          className={cn(
+            "hidden border-r border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)]/94 backdrop-blur lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col",
+            collapsed ? "lg:w-16" : "lg:w-60",
+          )}
+        >
+          <div className="flex items-center justify-between px-3 py-4">
+            {!collapsed ? (
+              <AdminBrand />
+            ) : (
+              <div className="mx-auto">
+                <AdminBrand compact showName={false} />
+              </div>
+            )}
 
-          <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-            <div className="rounded-[1.5rem] border border-[rgba(47,93,50,0.08)] bg-white/70 px-5 py-3 text-sm text-[var(--nuyu-muted)]">
-              <p className="font-semibold text-[var(--nuyu-ink)]">
-                {adminUser?.fullName ?? "Admin"}
-              </p>
-              <p className="mt-1">{adminUser?.email ?? "Private admin session"}</p>
-            </div>
+            <Tooltip content={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn("shrink-0", collapsed && "mx-auto")}
+                onClick={() => setCollapsed((current) => !current)}
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                {collapsed ? (
+                  <PanelLeftOpen className="h-4 w-4" />
+                ) : (
+                  <PanelLeftClose className="h-4 w-4" />
+                )}
+              </Button>
+            </Tooltip>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => void refresh()}
-              className="rounded-full border border-[rgba(47,93,50,0.12)] bg-white/80 px-5 py-3 text-sm font-semibold text-[var(--nuyu-primary)] transition hover:bg-white"
-            >
-              {isLoading ? "Refreshing..." : "Refresh data"}
-            </button>
+          <nav className="mt-2 flex-1 space-y-1 px-2">
+            {navigation.map((item) => {
+              const Icon = item.icon;
 
-            <button
-              type="button"
+              return (
+                <Tooltip
+                  key={item.to}
+                  content={collapsed ? item.label.toLowerCase() : item.description}
+                  className={collapsed ? "w-full" : undefined}
+                >
+                  <NavLink
+                    to={item.to}
+                    end={item.to === "/admin"}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex min-h-11 items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]",
+                        collapsed && "justify-center px-0",
+                        isActive
+                          ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)] shadow-sm"
+                          : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-overlay)] hover:text-[var(--color-text)]",
+                      )
+                    }
+                  >
+                    <Icon className="h-5 w-5 shrink-0 text-current" />
+                    {!collapsed ? <span>{item.label}</span> : null}
+                  </NavLink>
+                </Tooltip>
+              );
+            })}
+          </nav>
+
+          <div className="border-t border-[var(--color-border-subtle)] px-3 py-4">
+            <Button
+              variant="ghost"
+              size="md"
+              fullWidth
+              leadingIcon={<LogOut className="h-4 w-4" />}
+              className={collapsed ? "justify-center px-0" : "justify-start"}
               onClick={handleSignOut}
-              className="rounded-full border border-[var(--nuyu-primary)] bg-[var(--nuyu-primary)] px-5 py-3 text-sm font-semibold text-[var(--nuyu-cream)] transition hover:opacity-90"
             >
-              Sign out
-            </button>
+              {!collapsed ? "Sign out" : null}
+            </Button>
           </div>
+        </aside>
+
+        <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-20 border-b border-[var(--color-border-subtle)] bg-[var(--color-surface)]/92 backdrop-blur">
+            <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+              <div className="flex min-w-0 items-center gap-3">
+                {isNestedPage ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    leadingIcon={<ArrowLeft className="h-4 w-4" />}
+                    onClick={() => navigate("/admin")}
+                  >
+                    Back
+                  </Button>
+                ) : null}
+
+                <div className="lg:hidden">
+                  <AdminBrand compact />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leadingIcon={<RefreshCcw className={cn("h-4 w-4", isLoading && "animate-spin")} />}
+                  className="hidden sm:inline-flex"
+                  onClick={() => void refresh()}
+                >
+                  {isLoading ? "Refreshing…" : "Refresh"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="sm:hidden"
+                  onClick={() => void refresh()}
+                  aria-label={isLoading ? "Refreshing data" : "Refresh data"}
+                >
+                  <RefreshCcw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+                </Button>
+              </div>
+            </div>
+          </header>
+
+          <main className="flex-1 pb-36 lg:pb-8">
+            <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6 lg:px-8">
+              <div className="route-fade-enter space-y-4">{children}</div>
+            </div>
+          </main>
         </div>
-      </header>
+      </div>
 
-      <div className="mx-auto max-w-7xl px-6 py-8 sm:px-8">
-        <section className="glass-card rounded-[2rem] p-4 sm:p-5">
-          <div className="mb-4 rounded-[1.5rem] bg-[rgba(47,93,50,0.08)] px-4 py-4 text-sm text-[var(--nuyu-muted)]">
-            <p className="font-semibold text-[var(--nuyu-ink)]">
-              Choose what you want to manage today
-            </p>
-            <p className="mt-1">
-              Each page is written to be simple to use without technical knowledge.
-            </p>
-          </div>
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)]/98 px-3 py-3 backdrop-blur lg:hidden">
+        <div className="grid grid-cols-3 gap-2">
+          {navigation.map((item) => {
+            const Icon = item.icon;
 
-          <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-6">
-            {navigation.map((item) => (
+            return (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.to === "/admin"}
                 className={({ isActive }) =>
-                  [
-                    "rounded-[1.5rem] border p-4 transition",
+                  cn(
+                    "flex min-h-[4.35rem] flex-col items-center justify-center gap-1.5 rounded-2xl px-2 py-2.5 text-[0.72rem] font-medium transition active:scale-[0.98]",
                     isActive
-                      ? "border-[var(--nuyu-primary)] bg-[rgba(47,93,50,0.1)]"
-                      : "border-[rgba(47,93,50,0.08)] bg-white/70 hover:bg-white",
-                  ].join(" ")
+                      ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)] shadow-sm"
+                      : "bg-[var(--color-surface-overlay)] text-[var(--color-text-muted)]",
+                  )
                 }
               >
-                <p className="text-sm font-semibold text-[var(--nuyu-ink)]">{item.label}</p>
-                <p className="mt-2 text-sm leading-6 text-[var(--nuyu-muted)]">
-                  {item.description}
-                </p>
+                <Icon className="h-4 w-4 text-current" />
+                <span className="text-center leading-tight text-current">{item.label}</span>
               </NavLink>
-            ))}
-          </div>
-        </section>
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          <div className="rounded-full border border-[rgba(47,93,50,0.08)] bg-white/70 px-4 py-2 text-sm text-[var(--nuyu-muted)]">
-            {data?.metrics.totalBookings ?? 0} bookings
-          </div>
-          <div className="rounded-full border border-[rgba(47,93,50,0.08)] bg-white/70 px-4 py-2 text-sm text-[var(--nuyu-muted)]">
-            {data?.metrics.totalClients ?? 0} clients
-          </div>
-          <div className="rounded-full border border-[rgba(47,93,50,0.08)] bg-white/70 px-4 py-2 text-sm text-[var(--nuyu-muted)]">
-            {data?.metrics.activeHolds ?? 0} holds waiting
-          </div>
-          <div className="rounded-full border border-[rgba(47,93,50,0.08)] bg-white/70 px-4 py-2 text-sm text-[var(--nuyu-muted)]">
-            {data?.metrics.activeServicesCount ?? 0} live services
-          </div>
+            );
+          })}
         </div>
-      </div>
-
-      <main className="mx-auto max-w-7xl px-6 pb-12 sm:px-8">{children}</main>
+      </nav>
     </div>
   );
 }

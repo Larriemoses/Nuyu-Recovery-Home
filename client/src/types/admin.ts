@@ -151,6 +151,14 @@ export type AdminOperationSummary = {
     reason?: string | null;
     createdAt: string;
   }>;
+  manualAvailabilitySlots: Array<{
+    id: string;
+    serviceId: string;
+    serviceName: string;
+    startsAt: string;
+    endsAt: string;
+    createdAt: string;
+  }>;
   availabilityWindows: Array<{
     id: string;
     serviceId: string;
@@ -267,5 +275,22 @@ export type AdminReportResponse = {
     status: "pending" | "held" | "confirmed" | "cancelled" | "completed";
     paymentStatus: "pending" | "paid" | "failed" | "refunded";
     totalAmountKobo: number;
+  }>;
+  exportBookings: Array<{
+    id: string;
+    createdAt: string;
+    serviceName: string;
+    clientName: string;
+    clientEmail?: string | null;
+    appliedOption?: string | null;
+    bookingKind: "appointment" | "package" | "stay";
+    status: "pending" | "held" | "confirmed" | "cancelled" | "completed";
+    paymentStatus: "pending" | "paid" | "failed" | "refunded";
+    totalAmountKobo: number;
+    paidAmountKobo: number;
+    slotStartsAt?: string | null;
+    slotEndsAt?: string | null;
+    checkInDate?: string | null;
+    checkOutDate?: string | null;
   }>;
 };

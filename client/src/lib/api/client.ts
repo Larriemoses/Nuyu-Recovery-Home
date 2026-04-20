@@ -1,4 +1,10 @@
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
+const configuredApiUrl = import.meta.env.VITE_API_URL;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const derivedSupabaseFunctionUrl = supabaseUrl
+  ? `${supabaseUrl.replace(/\/$/, "")}/functions/v1/app-api`
+  : undefined;
+const apiBaseUrl =
+  configuredApiUrl ?? derivedSupabaseFunctionUrl ?? "http://localhost:4000/api";
 
 type ApiRequestOptions = RequestInit & {
   accessToken?: string;
@@ -9,19 +15,31 @@ export async function apiRequest<T>(
   init?: ApiRequestOptions,
 ): Promise<T> {
   const { accessToken, headers, ...requestInit } = init ?? {};
+  const requestUrl = `${apiBaseUrl}${path}`;
+  let response: Response;
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken
-        ? {
-            Authorization: `Bearer ${accessToken}`,
-          }
-        : {}),
-      ...(headers ?? {}),
-    },
-    ...requestInit,
-  });
+  try {
+    response = await fetch(requestUrl, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken
+          ? {
+              Authorization: `Bearer ${accessToken}`,
+            }
+          : {}),
+        ...(headers ?? {}),
+      },
+      ...requestInit,
+    });
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        `Unable to reach the Nuyu backend at ${apiBaseUrl}.`,
+      );
+    }
+
+    throw error;
+  }
 
   const responseBody = await response.json().catch(() => null);
 

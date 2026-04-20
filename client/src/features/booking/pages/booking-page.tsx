@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SectionCard } from "../../../components/ui/section-card";
+import { CarouselControlButton } from "../../../components/ui/carousel-control-button";
 import { useServiceCatalog } from "../../../hooks/use-service-catalog";
 import { apiRequest } from "../../../lib/api/client";
 import type {
@@ -7,6 +8,7 @@ import type {
   ReserveSlotResponse,
 } from "../../../types/booking";
 import { formatCurrency } from "../../../utils/currency";
+import { getServiceMedia } from "../../services/data/service-media";
 
 const flowSteps = [
   "Choose a service, package, or recovery-home stay.",
@@ -51,9 +53,83 @@ function formatDateOnly(value?: string) {
   }).format(new Date(value));
 }
 
+function getBookingKindLabel(kind?: string) {
+  if (kind === "stay") {
+    return "Recovery stay";
+  }
+
+  if (kind === "package") {
+    return "Treatment package";
+  }
+
+  return "Wellness session";
+}
+
+function getServiceDetailLabel(service?: {
+  bookingKind: string;
+  durationMinutes?: number;
+  sessionsCount?: number;
+  minStayDays?: number;
+  maxStayDays?: number;
+}) {
+  if (!service) {
+    return {
+      label: "Service length",
+      value: "Choose a service",
+    };
+  }
+
+  if (service.bookingKind === "stay" && service.minStayDays && service.maxStayDays) {
+    return {
+      label: "Stay length",
+      value: `${service.minStayDays}-${service.maxStayDays} days`,
+    };
+  }
+
+  if (service.bookingKind === "package" && service.sessionsCount) {
+    return {
+      label: "Plan size",
+      value: `${service.sessionsCount} sessions`,
+    };
+  }
+
+  return {
+    label: "Session length",
+    value: `${service.durationMinutes ?? 60} minutes`,
+  };
+}
+
+function getServicePricing(service?: {
+  bookingKind: string;
+  basePriceKobo: number;
+  packages?: Array<{ packagePriceKobo: number }>;
+}) {
+  if (!service) {
+    return {
+      primaryLabel: "Price from",
+      primaryAmount: 0,
+    };
+  }
+
+  if (service.bookingKind === "package" && service.packages?.length) {
+    return {
+      primaryLabel: "Single session",
+      primaryAmount: service.basePriceKobo,
+      secondaryLabel: "Package from",
+      secondaryAmount: service.packages[0].packagePriceKobo,
+    };
+  }
+
+  return {
+    primaryLabel: service.bookingKind === "stay" ? "Stay from" : "Price from",
+    primaryAmount: service.basePriceKobo,
+  };
+}
+
 export function BookingPage() {
   const { services, source, isLoading, errorMessage } = useServiceCatalog();
   const [selectedServiceSlug, setSelectedServiceSlug] = useState("");
+  const [previewServiceSlug, setPreviewServiceSlug] = useState<string | null>(null);
   const [selectedPackageId, setSelectedPackageId] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -75,6 +151,7 @@ export function BookingPage() {
     message?: string;
     result?: ReserveSlotResponse;
   }>({ status: "idle" });
+  const serviceCarouselRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!services.length) {
@@ -89,6 +166,12 @@ export function BookingPage() {
   const selectedService = useMemo(
     () => services.find((service) => service.slug === selectedServiceSlug) ?? services[0],
     [selectedServiceSlug, services],
+  );
+  const previewService = useMemo(
+    () =>
+      services.find((service) => service.slug === previewServiceSlug) ??
+      selectedService,
+    [previewServiceSlug, selectedService, services],
   );
 
   useEffect(() => {
@@ -152,6 +235,23 @@ export function BookingPage() {
     selectedService?.bookingKind === "package" && selectedPackage
       ? selectedPackage.packagePriceKobo
       : selectedService?.basePriceKobo ?? 0;
+  const isStayBooking = selectedService?.bookingKind === "stay";
+  const previewServiceMedia = getServiceMedia(previewService?.slug);
+  const previewServiceDetail = getServiceDetailLabel(previewService);
+  const previewServicePricing = getServicePricing(previewService);
+
+  function scrollServices(direction: "left" | "right") {
+    if (!serviceCarouselRef.current) {
+      return;
+    }
+
+    const distance = Math.min(360, serviceCarouselRef.current.clientWidth * 0.9);
+
+    serviceCarouselRef.current.scrollBy({
+      left: direction === "right" ? distance : -distance,
+      behavior: "smooth",
+    });
+  }
 
   async function handleReserveSlot(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -223,253 +323,299 @@ export function BookingPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <SectionCard
-        eyebrow="Booking Journey"
-        title="A real booking flow up to the payment handoff"
-        description="The form now creates live pre-payment booking records in Supabase. Timed services create 10-minute holds, while recovery-home stays create a saved stay request ready for the payment step."
-      >
-        <div className="grid gap-4 md:grid-cols-5">
-          {flowSteps.map((step, index) => (
-            <div
-              key={step}
-              className="rounded-[1.5rem] bg-white/75 p-4 text-sm leading-6 text-[var(--nuyu-muted)]"
-            >
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--nuyu-gold)]">
-                Step {index + 1}
+    <div className="space-y-4">
+      <section className="public-panel rounded-[1.7rem] p-4 sm:p-5">
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
+              Booking Studio
+            </p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-[var(--nuyu-ink)] sm:text-4xl">
+              Choose a service, fill the form, and save the booking request.
+            </h1>
+            <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--nuyu-muted)] sm:text-lg">
+              This page is focused on the booking itself, so the service list stays simple
+              and the booking form stays the main thing on screen.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            <div className="public-subtle-panel rounded-[1.25rem] p-3.5">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--nuyu-muted)]">
+                Selected service
               </p>
-              <p className="mt-3">{step}</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--nuyu-ink)]">
+                {selectedService?.name ?? "Choose a service"}
+              </p>
             </div>
-          ))}
+            <div className="public-subtle-panel rounded-[1.25rem] p-3.5">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--nuyu-muted)]">
+                Current estimate
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-[var(--nuyu-ink)]">
+                {formatCurrency(estimatedAmountKobo)}
+              </p>
+            </div>
+            <div className="public-subtle-panel rounded-[1.25rem] p-3.5">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--nuyu-muted)]">
+                Service list
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--nuyu-muted)]">
+                {source === "supabase"
+                  ? "Using the live service list."
+                  : "Using the starter service list for now."}
+              </p>
+            </div>
+          </div>
         </div>
-      </SectionCard>
+      </section>
 
       <SectionCard
-        eyebrow={source === "supabase" ? "Live Services" : "Fallback Services"}
-        title="Service catalog"
-        description={
-          source === "supabase"
-            ? "These services are being loaded from your connected Supabase project."
-            : "The page is still showing the local starter catalog. Once Supabase responds with live data, that will take over automatically."
-        }
+        eyebrow="Choose Your Service"
+        title="Choose a service first"
+        description="Browse the service list below, then open the one you want and continue straight to the booking form."
       >
         {isLoading ? (
-          <div className="rounded-[1.5rem] bg-white/75 p-5 text-sm text-[var(--nuyu-muted)]">
-            Loading service catalog...
+          <div className="public-panel rounded-[1.5rem] p-5 text-base leading-7 text-[var(--nuyu-muted)]">
+            Loading services...
           </div>
         ) : null}
 
         {errorMessage ? (
-          <div className="mb-4 rounded-[1.5rem] border border-[rgba(47,93,50,0.12)] bg-[rgba(255,255,255,0.74)] p-4 text-sm leading-6 text-[var(--nuyu-muted)]">
+          <div className="mb-4 rounded-[1.6rem] border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] p-4 text-base leading-7 text-[var(--nuyu-muted)]">
             {errorMessage}
           </div>
         ) : null}
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          {services.map((service) => (
-            <article
-              key={service.slug}
-              className={[
-                "rounded-[1.5rem] border p-5 transition",
-                service.slug === selectedServiceSlug
-                  ? "border-[var(--nuyu-primary)] bg-[rgba(47,93,50,0.04)] shadow-[0_18px_40px_rgba(35,72,38,0.08)]"
-                  : "border-white/70 bg-white/75",
-              ].join(" ")}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--nuyu-gold)]">
-                    {service.bookingKind}
-                  </p>
-                  <h3 className="display-font mt-2 text-xl font-semibold text-[var(--nuyu-ink)]">
-                    {service.name}
-                  </h3>
-                </div>
-                <p className="rounded-full bg-[var(--nuyu-sand)] px-3 py-2 text-sm font-semibold text-[var(--nuyu-ink)]">
-                  {formatCurrency(service.basePriceKobo)}
-                </p>
-              </div>
+        <div className="relative">
+          <div className="absolute left-1 top-1/2 z-10 -translate-y-1/2">
+            <CarouselControlButton direction="left" onClick={() => scrollServices("left")} />
+          </div>
+          <div className="absolute right-1 top-1/2 z-10 -translate-y-1/2">
+            <CarouselControlButton direction="right" onClick={() => scrollServices("right")} />
+          </div>
 
-              <p className="mt-4 text-sm leading-6 text-[var(--nuyu-muted)]">
-                {service.summary}
-              </p>
+          <div ref={serviceCarouselRef} className="nuyu-carousel px-1">
+            {services.map((service, index) => {
+              const serviceMedia = getServiceMedia(service.slug);
+              const serviceDetail = getServiceDetailLabel(service);
+              const servicePricing = getServicePricing(service);
 
-              <div className="mt-4 flex flex-wrap gap-2 text-xs font-medium text-[var(--nuyu-muted)]">
-                {service.durationMinutes ? (
-                  <span className="rounded-full bg-[var(--nuyu-cream)] px-3 py-2">
-                    {service.durationMinutes} mins
-                  </span>
-                ) : null}
-                {service.minStayDays ? (
-                  <span className="rounded-full bg-[var(--nuyu-cream)] px-3 py-2">
-                    {service.minStayDays}-{service.maxStayDays} day stay
-                  </span>
-                ) : null}
-                {service.sessionsCount ? (
-                  <span className="rounded-full bg-[var(--nuyu-cream)] px-3 py-2">
-                    {service.sessionsCount} sessions
-                  </span>
-                ) : null}
-                {service.packages?.map((item) => (
-                  <span
-                    key={`${service.slug}-${item.label}`}
-                    className="rounded-full bg-[var(--nuyu-cream)] px-3 py-2"
-                  >
-                    {item.label} {formatCurrency(item.packagePriceKobo)}
-                  </span>
-                ))}
-              </div>
+              return (
+                <article
+                  key={service.slug}
+                    className={[
+                      "nuyu-carousel-card group nuyu-hover-lift nuyu-reveal flex h-full flex-col overflow-hidden rounded-[1.45rem] border p-3.5 transition",
+                      service.slug === selectedServiceSlug
+                        ? "border-[var(--color-primary)] bg-[color-mix(in_oklab,var(--color-primary)_8%,white)] shadow-[0_20px_46px_rgba(35,72,38,0.08)]"
+                        : "border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)]",
+                    ].join(" ")}
+                  style={{ animationDelay: `${index * 80}ms` }}
+                >
+                  <div className="relative overflow-hidden rounded-[1.15rem]">
+                    <img
+                      src={serviceMedia.imageUrl}
+                      alt={serviceMedia.alt}
+                      loading="lazy"
+                      decoding="async"
+                      className="nuyu-image aspect-[4/3] w-full object-cover"
+                    />
+                  </div>
 
-              <button
-                type="button"
-                className={[
-                  "mt-5 rounded-full border px-4 py-2 text-sm font-semibold transition",
-                  service.slug === selectedServiceSlug
-                    ? "border-[var(--nuyu-primary)] bg-[var(--nuyu-primary)] text-[var(--nuyu-cream)]"
-                    : "border-[var(--nuyu-primary)] text-[var(--nuyu-primary)] hover:bg-[var(--nuyu-primary)] hover:text-[var(--nuyu-cream)]",
-                ].join(" ")}
-                onClick={() => setSelectedServiceSlug(service.slug)}
-              >
-                {service.slug === selectedServiceSlug ? "Selected" : "Choose service"}
-              </button>
-            </article>
-          ))}
+                  <div className="mt-3 flex flex-1 flex-col">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
+                      {getBookingKindLabel(service.bookingKind)}
+                    </p>
+                    <h3 className="mt-1.5 text-base font-semibold leading-6 tracking-[-0.02em] text-[var(--nuyu-ink)] sm:text-lg">
+                      {service.name}
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-[var(--nuyu-muted)]">
+                      {service.summary}
+                    </p>
+
+                    <div className="mt-3 grid gap-2">
+                      <div className="public-subtle-panel rounded-[1rem] px-3 py-2 text-sm text-[var(--nuyu-muted)]">
+                        <span className="font-semibold text-[var(--nuyu-ink)]">
+                          {servicePricing.secondaryAmount
+                            ? servicePricing.secondaryLabel
+                            : servicePricing.primaryLabel}
+                          :
+                        </span>{" "}
+                        {formatCurrency(
+                          servicePricing.secondaryAmount ?? servicePricing.primaryAmount,
+                        )}
+                      </div>
+                      <div className="public-subtle-panel rounded-[1rem] px-3 py-2 text-sm text-[var(--nuyu-muted)]">
+                        <span className="font-semibold text-[var(--nuyu-ink)]">
+                          {serviceDetail.label}:
+                        </span>{" "}
+                        {serviceDetail.value}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className={[
+                        "mt-3 w-full rounded-full border px-4 py-2.5 text-sm font-semibold transition sm:text-base",
+                        service.slug === selectedServiceSlug
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                          : "border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white",
+                      ].join(" ")}
+                      onClick={() => setPreviewServiceSlug(service.slug)}
+                    >
+                      {service.slug === selectedServiceSlug
+                        ? "View selected service"
+                        : "View details"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </div>
       </SectionCard>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="grid gap-4 xl:grid-cols-[1.32fr_0.68fr] xl:items-start">
         <SectionCard
-          eyebrow="Booking Form"
+          eyebrow="Your Details"
           title={
-            selectedService?.bookingKind === "stay"
-              ? "Create a stay request up to payment"
-              : "Reserve a live time slot"
+            isStayBooking
+              ? "Tell us about your stay request"
+              : "Tell us about your booking"
           }
-          description="The booking is saved before payment so you can test the full pre-payment experience first."
+          description="Fill in the details below and save your request in a few simple steps."
         >
-          <form className="grid gap-4" onSubmit={handleReserveSlot}>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <label className="flex flex-col gap-2 text-sm text-[var(--nuyu-muted)]">
-                Full name
-                <input
-                  className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-[var(--nuyu-ink)]"
-                  value={fullName}
-                  onChange={(event) => setFullName(event.target.value)}
-                  placeholder="Client full name"
-                  required
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm text-[var(--nuyu-muted)]">
-                Email
-                <input
-                  className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-[var(--nuyu-ink)]"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="client@example.com"
-                  required
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm text-[var(--nuyu-muted)]">
-                Phone
-                <input
-                  className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-[var(--nuyu-ink)]"
-                  value={phone}
-                  onChange={(event) => setPhone(event.target.value)}
-                  placeholder="+234..."
-                  required
-                />
-              </label>
-
-              {selectedService?.packages?.length ? (
-                <label className="flex flex-col gap-2 text-sm text-[var(--nuyu-muted)]">
-                  Package option
-                  <select
-                    className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-[var(--nuyu-ink)]"
-                    value={selectedPackageId}
-                    onChange={(event) => setSelectedPackageId(event.target.value)}
-                  >
-                    {selectedService.packages.map((item) => (
-                      <option key={item.id ?? item.label} value={item.id}>
-                        {item.label} - {formatCurrency(item.packagePriceKobo)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
-              {selectedService?.bookingKind === "stay" ? (
-                <>
-                  <label className="flex flex-col gap-2 text-sm text-[var(--nuyu-muted)]">
-                    Check-in date
-                    <input
-                      className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-[var(--nuyu-ink)]"
-                      type="date"
-                      value={checkInDate}
-                      onChange={(event) => setCheckInDate(event.target.value)}
-                      required
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-2 text-sm text-[var(--nuyu-muted)]">
-                    Check-out date
-                    <input
-                      className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-[var(--nuyu-ink)]"
-                      type="date"
-                      value={checkOutDate}
-                      onChange={(event) => setCheckOutDate(event.target.value)}
-                      required
-                    />
-                  </label>
-                </>
-              ) : (
-                <label className="flex flex-col gap-2 text-sm text-[var(--nuyu-muted)]">
-                  Booking date
+          <form id="booking-form" className="grid gap-4 sm:gap-5" onSubmit={handleReserveSlot}>
+            <div className="public-subtle-panel rounded-[1.45rem] p-5 sm:p-6">
+              <p className="text-base font-semibold text-[var(--nuyu-ink)]">Contact details</p>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <label className="flex flex-col gap-2 text-base text-[var(--nuyu-muted)]">
+                  Full name
                   <input
-                    className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-[var(--nuyu-ink)]"
-                    type="date"
-                    value={bookingDate}
-                    onChange={(event) => setBookingDate(event.target.value)}
+                    className="public-form-control rounded-2xl px-4 py-3.5 text-base"
+                    value={fullName}
+                    onChange={(event) => setFullName(event.target.value)}
+                    placeholder="Client full name"
                     required
                   />
                 </label>
-              )}
+
+                <label className="flex flex-col gap-2 text-base text-[var(--nuyu-muted)]">
+                  Email
+                  <input
+                    className="public-form-control rounded-2xl px-4 py-3.5 text-base"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="client@example.com"
+                    required
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-base text-[var(--nuyu-muted)]">
+                  Phone
+                  <input
+                    className="public-form-control rounded-2xl px-4 py-3.5 text-base"
+                    value={phone}
+                    onChange={(event) => setPhone(event.target.value)}
+                    placeholder="+234..."
+                    required
+                  />
+                </label>
+
+                {selectedService?.packages?.length ? (
+                  <label className="flex flex-col gap-2 text-base text-[var(--nuyu-muted)]">
+                    Package option
+                    <select
+                      className="public-form-control rounded-2xl px-4 py-3.5 text-base"
+                      value={selectedPackageId}
+                      onChange={(event) => setSelectedPackageId(event.target.value)}
+                    >
+                      {selectedService.packages.map((item) => (
+                        <option key={item.id ?? item.label} value={item.id}>
+                          {item.label} - {formatCurrency(item.packagePriceKobo)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
             </div>
 
-            <label className="flex flex-col gap-2 text-sm text-[var(--nuyu-muted)]">
-              Notes for admin
+            <div className="public-subtle-panel rounded-[1.45rem] p-5 sm:p-6">
+              <p className="text-base font-semibold text-[var(--nuyu-ink)]">Schedule</p>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                {isStayBooking ? (
+                  <>
+                    <label className="flex flex-col gap-2 text-base text-[var(--nuyu-muted)]">
+                      Check-in date
+                      <input
+                        className="public-form-control rounded-2xl px-4 py-3.5 text-base"
+                        type="date"
+                        value={checkInDate}
+                        onChange={(event) => setCheckInDate(event.target.value)}
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-2 text-base text-[var(--nuyu-muted)]">
+                      Check-out date
+                      <input
+                        className="public-form-control rounded-2xl px-4 py-3.5 text-base"
+                        type="date"
+                        value={checkOutDate}
+                        onChange={(event) => setCheckOutDate(event.target.value)}
+                        required
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <label className="flex flex-col gap-2 text-base text-[var(--nuyu-muted)]">
+                    Booking date
+                    <input
+                      className="public-form-control rounded-2xl px-4 py-3.5 text-base"
+                      type="date"
+                      value={bookingDate}
+                      onChange={(event) => setBookingDate(event.target.value)}
+                      required
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            <label className="flex flex-col gap-2 text-base text-[var(--nuyu-muted)]">
+              Notes or preferences
               <textarea
-                className="min-h-28 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-[var(--nuyu-ink)]"
+                className="public-form-control min-h-28 rounded-2xl px-4 py-3.5 text-base"
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
-                placeholder="Anything the team should know before payment or confirmation..."
+                placeholder="Anything you want the team to know before payment or confirmation..."
               />
             </label>
 
-            {selectedService?.bookingKind !== "stay" ? (
-              <div className="rounded-[1.5rem] bg-[rgba(255,255,255,0.74)] p-5">
-                <div className="flex items-center justify-between gap-3">
+            {!isStayBooking ? (
+              <div className="public-panel rounded-[1.45rem] p-5 sm:p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-[var(--nuyu-ink)]">
-                      Available slots
+                    <p className="text-base font-semibold text-[var(--nuyu-ink)]">
+                      Available time slots
                     </p>
-                    <p className="mt-1 text-sm text-[var(--nuyu-muted)]">
+                    <p className="mt-1 text-base leading-7 text-[var(--nuyu-muted)]">
                       {availabilityState.data?.date
-                        ? `Showing live availability for ${formatDateOnly(
+                        ? `Showing available slots for ${formatDateOnly(
                             availabilityState.data.date,
                           )}`
-                        : "Choose a date to load availability."}
+                        : "Choose a date to load available times."}
                     </p>
                   </div>
                   {availabilityState.isLoading ? (
-                    <p className="text-sm text-[var(--nuyu-muted)]">Loading slots...</p>
+                    <p className="text-base text-[var(--nuyu-muted)]">Loading slots...</p>
                   ) : null}
                 </div>
 
                 {availabilityState.errorMessage ? (
-                  <p className="mt-4 text-sm text-[var(--nuyu-muted)]">
+                  <p className="mt-4 text-base leading-7 text-[var(--nuyu-muted)]">
                     {availabilityState.errorMessage}
                   </p>
                 ) : null}
@@ -481,10 +627,10 @@ export function BookingPage() {
                         key={slot.startsAt}
                         type="button"
                         className={[
-                          "rounded-full px-4 py-2 text-sm font-medium transition",
+                          "rounded-full px-5 py-3 text-base font-medium transition",
                           availabilityState.selectedSlotStartsAt === slot.startsAt
-                            ? "bg-[var(--nuyu-primary)] text-[var(--nuyu-cream)]"
-                            : "bg-white text-[var(--nuyu-muted)] hover:bg-[var(--nuyu-cream)]",
+                            ? "bg-[var(--color-primary)] text-white"
+                            : "border border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] text-[var(--nuyu-muted)] hover:bg-[var(--color-surface-overlay)]",
                         ].join(" ")}
                         onClick={() =>
                           setAvailabilityState((current) => ({
@@ -497,7 +643,7 @@ export function BookingPage() {
                       </button>
                     ))
                   ) : (
-                    <p className="text-sm text-[var(--nuyu-muted)]">
+                    <p className="text-base leading-7 text-[var(--nuyu-muted)]">
                       No open slots were found for that day yet.
                     </p>
                   )}
@@ -508,90 +654,241 @@ export function BookingPage() {
             <div className="flex items-end">
               <button
                 type="submit"
-                className="rounded-full bg-[var(--nuyu-primary)] px-6 py-3 text-sm font-semibold text-[var(--nuyu-cream)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-full bg-[var(--color-primary)] px-6 py-3.5 text-base font-semibold text-white transition hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={requestState.status === "submitting"}
               >
                 {requestState.status === "submitting"
                   ? "Saving booking..."
-                  : selectedService?.bookingKind === "stay"
+                  : isStayBooking
                     ? "Save stay request"
-                    : "Reserve booking and continue"}
+                    : "Save booking request"}
               </button>
             </div>
           </form>
         </SectionCard>
 
-        <SectionCard
-          eyebrow="Pre-Payment Summary"
-          title="Everything ready before Paystack"
-          description="This panel reflects the selected service and the saved booking result so you can test the whole lead-up to payment."
-        >
-          <div className="space-y-4 text-sm text-[var(--nuyu-muted)]">
-            <div className="rounded-[1.5rem] bg-white/75 p-5">
-              <p className="font-semibold text-[var(--nuyu-ink)]">
-                {selectedService?.name ?? "Choose a service"}
-              </p>
-              <p className="mt-2">
-                {selectedService?.bookingKind === "stay"
-                  ? `${formatDateOnly(checkInDate)} to ${formatDateOnly(checkOutDate)}`
-                  : selectedSlot
-                    ? `${selectedSlot.label} on ${formatDateOnly(bookingDate)}`
-                    : "Choose an available slot to preview the booking schedule."}
-              </p>
-              <p className="mt-3 text-lg font-semibold text-[var(--nuyu-ink)]">
-                {formatCurrency(estimatedAmountKobo)}
-              </p>
-              <p className="mt-2">
-                {selectedService?.bookingKind === "package" && selectedPackage
-                  ? `Selected package: ${selectedPackage.label}`
-                  : selectedService?.bookingKind === "stay"
-                    ? "Estimated stay amount saved with the draft booking."
-                    : "Base service amount saved with the booking draft."}
-              </p>
-            </div>
+        <div className="space-y-6">
+          <SectionCard
+            eyebrow="Your Summary"
+            title="Quick booking summary"
+            description="This side panel stays simple so the form remains the main focus."
+          >
+            <div className="space-y-4 text-base leading-7 text-[var(--nuyu-muted)]">
+              <div className="public-panel rounded-[1.45rem] p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[var(--nuyu-gold)]">
+                  {getBookingKindLabel(selectedService?.bookingKind)}
+                </p>
+                <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-[var(--nuyu-ink)]">
+                  {selectedService?.name ?? "Choose a service"}
+                </p>
+                <p className="mt-3">
+                  {isStayBooking
+                    ? `${formatDateOnly(checkInDate)} to ${formatDateOnly(checkOutDate)}`
+                    : selectedSlot
+                      ? `${selectedSlot.label} on ${formatDateOnly(bookingDate)}`
+                      : "Choose an available slot to preview the schedule."}
+                </p>
+                <p className="mt-3 text-2xl font-semibold text-[var(--nuyu-ink)]">
+                  {formatCurrency(estimatedAmountKobo)}
+                </p>
+                <p className="mt-2">
+                  {selectedService?.bookingKind === "package" && selectedPackage
+                    ? `Package selected: ${selectedPackage.label}`
+                    : isStayBooking
+                      ? "This estimate reflects the selected stay request."
+                      : "This estimate reflects the selected booking request."}
+                </p>
+              </div>
 
-            {requestState.status !== "idle" ? (
-              <div className="rounded-[1.5rem] border border-white/70 bg-white/75 p-5">
-                {requestState.status === "success" && requestState.result ? (
-                  <>
-                    <p className="font-semibold text-[var(--nuyu-ink)]">
-                      Booking saved successfully
-                    </p>
-                    <p className="mt-3">
-                      Booking ID: <strong>{requestState.result.bookingId}</strong>
-                    </p>
-                    {requestState.result.holdId ? (
-                      <p className="mt-2">
-                        Hold ID: <strong>{requestState.result.holdId}</strong>
-                      </p>
-                    ) : null}
-                    {requestState.result.expiresAt ? (
-                      <p className="mt-2">
-                        Hold expires: <strong>{formatDateTime(requestState.result.expiresAt)}</strong>
-                      </p>
-                    ) : null}
-                    {requestState.result.nextStep ? (
-                      <p className="mt-3">{requestState.result.nextStep}</p>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="mt-4 rounded-full bg-[var(--nuyu-primary-deep)] px-5 py-3 text-sm font-semibold text-[var(--nuyu-cream)] opacity-85"
+              <div className="public-panel rounded-[1.6rem] p-5">
+                <p className="text-base font-semibold text-[var(--nuyu-ink)]">
+                  What happens next
+                </p>
+                <div className="mt-4 grid gap-3">
+                  {flowSteps.map((step, index) => (
+                    <div
+                      key={step}
+                      className="public-subtle-panel rounded-[1.2rem] px-4 py-3 text-base leading-7 text-[var(--nuyu-muted)]"
                     >
-                      Continue to payment (next integration)
-                    </button>
-                  </>
+                      <span className="font-semibold text-[var(--nuyu-ink)]">
+                        {index + 1}.
+                      </span>{" "}
+                      {step}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            eyebrow="Saved Request"
+            title="Your latest booking update"
+            description="This area updates after you save the request."
+          >
+            <div className="space-y-4 text-base leading-7 text-[var(--nuyu-muted)]">
+              {requestState.status !== "idle" ? (
+                <div className="public-panel rounded-[1.75rem] p-5">
+                  {requestState.status === "success" && requestState.result ? (
+                    <>
+                      <p className="font-semibold text-[var(--nuyu-ink)]">
+                        Your booking request has been saved
+                      </p>
+                      <p className="mt-3">
+                        Reference: <strong>{requestState.result.bookingId}</strong>
+                      </p>
+                      {requestState.result.holdId ? (
+                        <p className="mt-2">
+                          Hold reference: <strong>{requestState.result.holdId}</strong>
+                        </p>
+                      ) : null}
+                      {requestState.result.expiresAt ? (
+                        <p className="mt-2">
+                          Hold expires:{" "}
+                          <strong>{formatDateTime(requestState.result.expiresAt)}</strong>
+                        </p>
+                      ) : null}
+                      {requestState.result.nextStep ? (
+                        <p className="mt-3">{requestState.result.nextStep}</p>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="mt-4 rounded-full bg-[var(--color-primary)] px-5 py-3.5 text-base font-semibold text-white opacity-90"
+                      >
+                        Continue to payment later
+                      </button>
+                    </>
+                  ) : null}
+
+                  {requestState.message ? <p className="mt-3">{requestState.message}</p> : null}
+                </div>
+              ) : (
+                <div className="rounded-[1.75rem] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-overlay)] p-5">
+                  Save your request and the latest booking update will appear here.
+                </div>
+              )}
+            </div>
+          </SectionCard>
+        </div>
+      </div>
+
+      {previewServiceSlug ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(18,29,20,0.5)] p-3 sm:items-center sm:p-6"
+          onClick={() => setPreviewServiceSlug(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Service details"
+            className="public-panel w-full max-w-4xl rounded-[1.8rem] p-4 sm:p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
+              <div className="overflow-hidden rounded-[1.5rem] border border-[var(--color-border-subtle)]">
+                <img
+                  src={previewServiceMedia.imageUrl}
+                  alt={previewServiceMedia.alt}
+                  className="aspect-[5/4] w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--nuyu-gold)]">
+                      {getBookingKindLabel(previewService?.bookingKind)}
+                    </p>
+                    <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[var(--nuyu-ink)]">
+                      {previewService?.name}
+                    </h3>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="rounded-full border border-[var(--nuyu-line)] bg-[rgba(255,255,255,0.72)] px-4 py-2 text-sm font-semibold text-[var(--nuyu-muted)]"
+                    onClick={() => setPreviewServiceSlug(null)}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <p className="mt-4 text-base leading-7 text-[var(--nuyu-muted)]">
+                  {previewService?.summary}
+                </p>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="public-subtle-panel rounded-[1.2rem] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--nuyu-muted)]">
+                      {previewServicePricing.primaryLabel}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-[var(--nuyu-ink)]">
+                      {formatCurrency(previewServicePricing.primaryAmount)}
+                    </p>
+                  </div>
+                  <div className="public-subtle-panel rounded-[1.2rem] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--nuyu-muted)]">
+                      {previewServicePricing.secondaryLabel ?? previewServiceDetail.label}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-[var(--nuyu-ink)]">
+                      {previewServicePricing.secondaryAmount
+                        ? formatCurrency(previewServicePricing.secondaryAmount)
+                        : previewServiceDetail.value}
+                    </p>
+                  </div>
+                  <div className="public-subtle-panel rounded-[1.2rem] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--nuyu-muted)]">
+                      Good to know
+                    </p>
+                    <p className="mt-2 text-base leading-7 text-[var(--nuyu-muted)]">
+                      {previewService?.packages?.length
+                        ? `${previewService.packages.length} package options available`
+                        : "You can book this option directly from the form below."}
+                    </p>
+                  </div>
+                </div>
+
+                {previewService?.packages?.length ? (
+                  <div className="mt-4 rounded-[1.2rem] border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] p-4 text-base leading-7 text-[var(--nuyu-muted)]">
+                    <span className="font-semibold text-[var(--nuyu-ink)]">
+                      Package options:
+                    </span>{" "}
+                    {previewService.packages.map((item) => item.label).join(", ")}
+                  </div>
                 ) : null}
 
-                {requestState.message ? <p className="mt-3">{requestState.message}</p> : null}
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    className="rounded-full bg-[var(--color-primary)] px-6 py-3 text-base font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
+                    onClick={() => {
+                      if (previewService?.slug) {
+                        setSelectedServiceSlug(previewService.slug);
+                      }
+                      setPreviewServiceSlug(null);
+                      document.getElementById("booking-form")?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                    }}
+                  >
+                    Use this service
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-6 py-3 text-base font-semibold text-[var(--color-primary)] transition hover:bg-[var(--color-surface-overlay)]"
+                    onClick={() => setPreviewServiceSlug(null)}
+                  >
+                    Keep browsing
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="rounded-[1.5rem] border border-dashed border-[rgba(42,31,27,0.18)] bg-[rgba(255,255,255,0.56)] p-5">
-                Save a booking draft and this panel will show the exact handoff point to payment.
-              </div>
-            )}
+            </div>
           </div>
-        </SectionCard>
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

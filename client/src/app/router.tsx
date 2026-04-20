@@ -1,12 +1,7 @@
 import { Suspense, lazy, type PropsWithChildren } from "react";
-import { createHashRouter } from "react-router-dom";
+import { Navigate, createHashRouter } from "react-router-dom";
 import { AppShell } from "../components/layout/app-shell";
 import { HomePage } from "../features/home/pages/home-page";
-const BookingPage = lazy(() =>
-  import("../features/booking/pages/booking-page").then((module) => ({
-    default: module.BookingPage,
-  })),
-);
 const AdminAuthScope = lazy(() =>
   import("../features/admin/components/admin-auth-scope").then((module) => ({
     default: module.AdminAuthScope,
@@ -86,11 +81,7 @@ export const router = createHashRouter([
       },
       {
         path: "booking",
-        element: (
-          <SuspendedRoute>
-            <BookingPage />
-          </SuspendedRoute>
-        ),
+        element: <Navigate to="/?book=1" replace />,
       },
     ],
   },

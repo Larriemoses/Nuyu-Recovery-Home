@@ -4,13 +4,13 @@ type AdminStatusPillProps = {
 };
 
 const toneClasses: Record<NonNullable<AdminStatusPillProps["tone"]>, string> = {
-  green:
-    "border-[rgba(47,93,50,0.12)] bg-[rgba(47,93,50,0.1)] text-[var(--nuyu-primary-deep)]",
+  green: "border-transparent bg-[var(--color-primary)] text-[var(--color-primary-foreground)]",
   gold:
-    "border-[rgba(169,131,24,0.14)] bg-[rgba(169,131,24,0.1)] text-[var(--nuyu-ink)]",
-  ink: "border-[rgba(24,50,28,0.12)] bg-[rgba(24,50,28,0.08)] text-[var(--nuyu-ink)]",
+    "border-transparent bg-[color-mix(in_oklab,var(--color-warning)_16%,white)] text-[var(--color-warning)]",
+  ink:
+    "border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] text-[var(--color-text)]",
   rose:
-    "border-[rgba(129,88,69,0.12)] bg-[rgba(129,88,69,0.08)] text-[var(--nuyu-ink)]",
+    "border-transparent bg-[color-mix(in_oklab,var(--color-danger)_14%,white)] text-[var(--color-danger)]",
 };
 
 export function AdminStatusPill({
@@ -20,7 +20,7 @@ export function AdminStatusPill({
   return (
     <span
       className={[
-        "inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]",
+        "inline-flex rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]",
         toneClasses[tone],
       ].join(" ")}
     >

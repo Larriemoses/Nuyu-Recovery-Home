@@ -1,242 +1,187 @@
-import { SectionCard } from "../../../components/ui/section-card";
-import { useAdminPortal } from "../context/admin-portal-provider";
-import { AdminEmptyState } from "../components/admin-empty-state";
-import { AdminStatusPill } from "../components/admin-status-pill";
-import {
-  formatDateTime,
-  formatTimeOnly,
-  weekdayLabels,
-} from "../utils/admin-format";
+import { Link } from "react-router-dom";
 import { formatCurrency } from "../../../utils/currency";
+import { AdminAvailabilityManager } from "../components/admin-availability-manager";
+import { AdminBlockedSlotManager } from "../components/admin-blocked-slot-manager";
+import { AdminEmptyState } from "../components/admin-empty-state";
+import { AdminManualSlotManager } from "../components/admin-manual-slot-manager";
+import { AdminStatusPill } from "../components/admin-status-pill";
+import { AdminMetricCard, AdminPanel } from "../components/admin-ui";
+import { useAdminPortal } from "../context/admin-portal-provider";
+import { formatDateTime } from "../utils/admin-format";
 
 export function AdminOperationsPage() {
   const { data, isLoading, errorMessage } = useAdminPortal();
 
   if (isLoading) {
     return (
-      <SectionCard eyebrow="Operations" title="Loading operations data">
+      <AdminPanel eyebrow="Operations" title="Loading operations data">
         <div className="rounded-[1.5rem] bg-white/75 p-6 text-sm text-[var(--nuyu-muted)]">
           Loading operations...
         </div>
-      </SectionCard>
+      </AdminPanel>
     );
   }
 
   if (errorMessage || !data) {
     return (
-      <SectionCard eyebrow="Operations" title="Operations data could not be loaded">
+      <AdminPanel eyebrow="Operations" title="Operations data could not be loaded">
         <AdminEmptyState
           title="Operations data is unavailable"
           description={errorMessage ?? "No operations data was returned."}
         />
-      </SectionCard>
+      </AdminPanel>
     );
   }
 
+  const activeHolds = data.operations.activeHolds.slice(0, 4);
+  const paymentSummary = data.operations.paymentSummary;
+  const reportPeriods = ["Daily", "Weekly", "Monthly", "Yearly"];
+
   return (
-    <div className="space-y-8">
-      <SectionCard
+    <div className="space-y-4">
+      <AdminPanel
         eyebrow="Operations"
-        title="Operations made easier to understand"
-        description="See availability, blocked time, holds, and payment readiness in one clear admin view."
+        title="Schedule control"
+        description="This is the simple place to open times, post one-off slots, block times, and move straight into reporting."
       >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[1.5rem] bg-white/80 p-5">
-            <p className="text-xs uppercase tracking-[0.24em] text-[var(--nuyu-gold)]">
-              Availability Windows
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-[var(--nuyu-ink)]">
-              {data.operations.availabilityWindows.length}
-            </p>
-            <p className="mt-2 text-sm text-[var(--nuyu-muted)]">
-              Active schedule blocks across all services
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <AdminMetricCard
+            label="Weekly windows"
+            value={data.operations.availabilityWindows.length}
+            helper="Recurring schedule rules"
+            accent="primary"
+          />
+          <AdminMetricCard
+            label="One-off times"
+            value={data.operations.manualAvailabilitySlots.length}
+            helper="Specific extra times visible to clients"
+            accent="gold"
+          />
+          <AdminMetricCard
+            label="Blocked times"
+            value={data.operations.blockedSlots.length}
+            helper="Unavailable periods removed from booking"
+          />
+          <AdminMetricCard
+            label="Active holds"
+            value={data.operations.activeHolds.length}
+            helper="Temporary reservations still in progress"
+          />
+        </div>
+
+        <div className="mt-5 grid gap-3 xl:grid-cols-[1.12fr_0.88fr]">
+          <div className="admin-quiet-card rounded-[1.35rem] p-4 text-sm text-[var(--nuyu-muted)]">
+            <p className="font-semibold text-[var(--nuyu-ink)]">How scheduling works now</p>
+            <p className="mt-2 leading-7">
+              Weekly windows create the normal timetable. One-off times let the admin add a
+              special slot for clients to book. Blocked times remove a period immediately, and
+              active holds show the temporary reservations still waiting for the next step.
             </p>
           </div>
 
-          <div className="rounded-[1.5rem] bg-white/80 p-5">
-            <p className="text-xs uppercase tracking-[0.24em] text-[var(--nuyu-gold)]">
-              Blocked Slots
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-[var(--nuyu-ink)]">
-              {data.operations.blockedSlots.length}
-            </p>
-            <p className="mt-2 text-sm text-[var(--nuyu-muted)]">
-              Manual schedule blocks currently stored
-            </p>
-          </div>
-
-          <div className="rounded-[1.5rem] bg-white/80 p-5">
-            <p className="text-xs uppercase tracking-[0.24em] text-[var(--nuyu-gold)]">
-              Payment Records
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-[var(--nuyu-ink)]">
-              {data.operations.paymentSummary.totalRecords}
-            </p>
-            <p className="mt-2 text-sm text-[var(--nuyu-muted)]">
-              {data.setup.paystackConfigured ? "Live payment records are being tracked." : "Paystack is still the final integration stage."}
-            </p>
-          </div>
-
-          <div className="rounded-[1.5rem] bg-white/80 p-5">
-            <p className="text-xs uppercase tracking-[0.24em] text-[var(--nuyu-gold)]">
-              Verified Value
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-[var(--nuyu-ink)]">
-              {formatCurrency(data.operations.paymentSummary.verifiedAmountKobo)}
-            </p>
-            <p className="mt-2 text-sm text-[var(--nuyu-muted)]">
-              Amount attached to verified paid payment records
+          <div className="admin-quiet-card rounded-[1.35rem] p-4 text-sm text-[var(--nuyu-muted)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="font-semibold text-[var(--nuyu-ink)]">Reports</p>
+              <Link
+                to="/admin/reports"
+                className="rounded-full bg-white/85 px-3 py-2 text-sm font-semibold text-[var(--nuyu-primary)] transition hover:bg-white"
+              >
+                Open reports
+              </Link>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {reportPeriods.map((period) => (
+                <span
+                  key={period}
+                  className="rounded-full bg-white/78 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--nuyu-muted)]"
+                >
+                  {period}
+                </span>
+              ))}
+            </div>
+            <p className="mt-3 leading-7">
+              Daily, weekly, monthly, and yearly exports are already available from the
+              reports page.
             </p>
           </div>
         </div>
-      </SectionCard>
+      </AdminPanel>
 
-      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <SectionCard
-          eyebrow="Active Holds"
-          title="Reservations that are still time-sensitive"
-          description="These are the bookings the team may want to watch most closely before payment is added."
+      <AdminManualSlotManager />
+
+      <AdminAvailabilityManager />
+
+      <div className="space-y-4">
+        <AdminBlockedSlotManager />
+
+        <AdminPanel
+          eyebrow="Temporary Reservations"
+          title="Live holds and payment status"
+          description="This keeps the admin team aware of time-sensitive bookings and payment progress at a glance."
         >
-          <div className="space-y-3">
-            {data.operations.activeHolds.length ? (
-              data.operations.activeHolds.map((hold) => (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="admin-quiet-card rounded-[1.35rem] p-4 text-sm text-[var(--nuyu-muted)]">
+              <p className="font-semibold text-[var(--nuyu-ink)]">Verified value</p>
+              <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[var(--nuyu-ink)]">
+                {formatCurrency(paymentSummary.verifiedAmountKobo)}
+              </p>
+              <p className="mt-2 leading-6">
+                {data.setup.paystackConfigured
+                  ? "Paid records are being tracked."
+                  : "Payment is still in the final integration stage."}
+              </p>
+            </div>
+
+            <div className="admin-quiet-card rounded-[1.35rem] p-4 text-sm text-[var(--nuyu-muted)]">
+              <p className="font-semibold text-[var(--nuyu-ink)]">Payment records</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <AdminStatusPill label={`${paymentSummary.paidCount} paid`} tone="green" />
+                <AdminStatusPill
+                  label={`${paymentSummary.pendingCount} pending`}
+                  tone="gold"
+                />
+                <AdminStatusPill
+                  label={`${paymentSummary.failedCount} failed`}
+                  tone="ink"
+                />
+              </div>
+              <p className="mt-3 leading-6">
+                {paymentSummary.totalRecords} payment records have been tracked so far.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {activeHolds.length ? (
+              activeHolds.map((hold) => (
                 <article
                   key={hold.id}
-                  className="rounded-[1.5rem] border border-[rgba(47,93,50,0.08)] bg-white/78 p-4 text-sm text-[var(--nuyu-muted)]"
+                  className="admin-list-row rounded-[1.35rem] p-4 text-sm text-[var(--nuyu-muted)]"
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-[var(--nuyu-ink)]">{hold.serviceName}</p>
                       <p className="mt-1">{hold.clientEmail}</p>
+                      <p className="mt-2">
+                        {formatDateTime(hold.startsAt)} to {formatDateTime(hold.endsAt)}
+                      </p>
                     </div>
                     <AdminStatusPill label="Live hold" tone="gold" />
                   </div>
-
-                  <p className="mt-3">{formatDateTime(hold.startsAt)}</p>
-                  <p className="mt-1">Expires {formatDateTime(hold.expiresAt)}</p>
+                  <p className="mt-3 text-xs uppercase tracking-[0.16em]">
+                    Expires {formatDateTime(hold.expiresAt)}
+                  </p>
                 </article>
               ))
             ) : (
               <AdminEmptyState
                 title="No active holds right now"
-                description="When a slot is temporarily reserved, it will be visible here."
+                description="Once someone starts a timed booking flow, the hold will appear here until payment or expiry."
               />
             )}
           </div>
-        </SectionCard>
-
-        <SectionCard
-          eyebrow="Blocked Slots"
-          title="Manual time blocks already applied"
-          description="These are the dates or times the team has intentionally made unavailable."
-        >
-          <div className="space-y-3">
-            {data.operations.blockedSlots.length ? (
-              data.operations.blockedSlots.map((slot) => (
-                <article
-                  key={slot.id}
-                  className="rounded-[1.5rem] border border-[rgba(47,93,50,0.08)] bg-white/78 p-4 text-sm text-[var(--nuyu-muted)]"
-                >
-                  <p className="font-semibold text-[var(--nuyu-ink)]">{slot.serviceName}</p>
-                  <p className="mt-2">{formatDateTime(slot.startsAt)}</p>
-                  <p className="mt-1">Until {formatDateTime(slot.endsAt)}</p>
-                  <p className="mt-2">{slot.reason || "No reason was recorded."}</p>
-                </article>
-              ))
-            ) : (
-              <AdminEmptyState
-                title="No blocked slots yet"
-                description="When admin schedule blocks are added, they will appear here."
-              />
-            )}
-          </div>
-        </SectionCard>
+        </AdminPanel>
       </div>
-
-      <SectionCard
-        eyebrow="Availability"
-        title="Configured availability windows by service"
-        description="This gives the team a readable schedule map without needing to inspect the database."
-      >
-        <div className="grid gap-4 xl:grid-cols-2">
-          {data.operations.availabilityWindows.length ? (
-            data.operations.availabilityWindows.map((window) => (
-              <article
-                key={window.id}
-                className="rounded-[1.5rem] bg-white/78 p-4 text-sm text-[var(--nuyu-muted)]"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <p className="font-semibold text-[var(--nuyu-ink)]">{window.serviceName}</p>
-                  <AdminStatusPill label={weekdayLabels[window.weekday]} tone="green" />
-                </div>
-                <p className="mt-3">
-                  {formatTimeOnly(window.startTime)} - {formatTimeOnly(window.endTime)}
-                </p>
-                <p className="mt-1">
-                  {window.slotLengthMinutes} minute slots - capacity {window.capacity}
-                </p>
-              </article>
-            ))
-          ) : (
-            <AdminEmptyState
-              title="No availability windows are configured"
-              description="This section will show schedule coverage once services have live availability added."
-            />
-          )}
-        </div>
-      </SectionCard>
-
-      <SectionCard
-        eyebrow="Payments"
-        title="Payment readiness and status tracking"
-        description="Paystack is still the final stage, but this section keeps the team ready for how payments will be monitored once it is connected."
-      >
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
-              Pending
-            </p>
-            <p className="mt-3 text-2xl font-semibold text-[var(--nuyu-ink)]">
-              {data.operations.paymentSummary.pendingCount}
-            </p>
-          </div>
-          <div className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
-              Paid
-            </p>
-            <p className="mt-3 text-2xl font-semibold text-[var(--nuyu-ink)]">
-              {data.operations.paymentSummary.paidCount}
-            </p>
-          </div>
-          <div className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
-              Failed
-            </p>
-            <p className="mt-3 text-2xl font-semibold text-[var(--nuyu-ink)]">
-              {data.operations.paymentSummary.failedCount}
-            </p>
-          </div>
-          <div className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[var(--nuyu-gold)]">
-              Refunded
-            </p>
-            <p className="mt-3 text-2xl font-semibold text-[var(--nuyu-ink)]">
-              {data.operations.paymentSummary.refundedCount}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          {data.operations.bookingStatusSummary.map((item) => (
-            <div
-              key={item.status}
-              className="rounded-full bg-[var(--nuyu-cream)] px-4 py-2 text-sm text-[var(--nuyu-muted)]"
-            >
-              {item.status}: {item.count}
-            </div>
-          ))}
-        </div>
-      </SectionCard>
     </div>
   );
 }

@@ -5,7 +5,10 @@ config();
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(4000),
-  CLIENT_URL: z.string().url().default("http://localhost:5173"),
+  CLIENT_URL: z
+    .string()
+    .url()
+    .default("https://nuyu-recovery.vercel.app"),
   CLIENT_URLS: z.string().optional(),
   SUPABASE_URL: z.string().url().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),

@@ -1,0 +1,5 @@
+{
+  "installCommand": "npm install --include=optional --no-package-lock",
+  "buildCommand": "npm run build --workspace client",
+  "outputDirectory": "client/dist"
+}

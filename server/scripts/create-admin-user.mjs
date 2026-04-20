@@ -126,7 +126,7 @@ try {
   }
 
   console.log(`Admin access is ready for ${email}.`);
-  console.log("Admin login URL: http://localhost:5173/#/admin/login");
+  console.log("Admin login URL: https://nuyurecovery.vercel.app/#/admin/login");
 } catch (error) {
   console.error("Unable to create or promote the admin user.");
   console.error(error);

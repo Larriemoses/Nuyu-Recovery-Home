@@ -38,6 +38,18 @@ export function AdminAvailabilityManager() {
     }
   }, [serviceId, timedServices]);
 
+  useEffect(() => {
+    if (state.status !== "success") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setState({ status: "idle" });
+    }, 3000);
+
+    return () => window.clearTimeout(timeout);
+  }, [state.status]);
+
   if (!data) {
     return null;
   }
@@ -66,11 +78,11 @@ export function AdminAvailabilityManager() {
 
     setState({
       status: "submitting",
-      message: "Saving the new available time...",
+      message: undefined,
     });
 
     try {
-      const result = await apiRequest<{ message: string }>("/admin/availability-windows", {
+      await apiRequest<{ message: string }>("/admin/availability-windows", {
         method: "POST",
         accessToken,
         body: JSON.stringify({
@@ -85,16 +97,13 @@ export function AdminAvailabilityManager() {
 
       setState({
         status: "success",
-        message: result.message,
+        message: "Saved.",
       });
       await refresh();
-    } catch (error) {
+    } catch {
       setState({
         status: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to save the available time.",
+        message: "Something went wrong. Please try again.",
       });
     }
   }
@@ -108,32 +117,16 @@ export function AdminAvailabilityManager() {
       return;
     }
 
-    setState({
-      status: "submitting",
-      message: "Removing the available time...",
-    });
-
     try {
-      const result = await apiRequest<{ message: string }>(
-        `/admin/availability-windows/${windowId}`,
-        {
-          method: "DELETE",
-          accessToken,
-        },
-      );
-
-      setState({
-        status: "success",
-        message: result.message,
+      await apiRequest<{ message: string }>(`/admin/availability-windows/${windowId}`, {
+        method: "DELETE",
+        accessToken,
       });
       await refresh();
-    } catch (error) {
+    } catch {
       setState({
         status: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to remove the available time.",
+        message: "Something went wrong. Please try again.",
       });
     }
   }
@@ -225,19 +218,6 @@ export function AdminAvailabilityManager() {
             </label>
           </div>
 
-          {state.message ? (
-            <div
-              className={[
-                "rounded-[1.25rem] px-4 py-3 text-sm",
-                state.status === "error"
-                  ? "bg-[rgba(190,92,63,0.12)] text-[var(--nuyu-ink)]"
-                  : "bg-[rgba(47,93,50,0.08)] text-[var(--nuyu-ink)]",
-              ].join(" ")}
-            >
-              {state.message}
-            </div>
-          ) : null}
-
           <div className="rounded-[1.25rem] bg-[var(--nuyu-cream)] p-4 text-sm text-[var(--nuyu-muted)]">
             Saving available time here updates the booking-side availability clients can choose from.
           </div>
@@ -253,6 +233,18 @@ export function AdminAvailabilityManager() {
                 : "Save available time"}
             </button>
           </div>
+          {state.message ? (
+            <p
+              className={[
+                "text-[13px]",
+                state.status === "error"
+                  ? "text-[var(--color-danger)]"
+                  : "text-[var(--color-success)]",
+              ].join(" ")}
+            >
+              {state.message}
+            </p>
+          ) : null}
         </form>
       </AdminPanel>
 

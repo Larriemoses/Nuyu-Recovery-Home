@@ -116,11 +116,11 @@ function AdminBrand({
         <div className="min-w-0">
           <p
             className={cn(
-              "truncate font-semibold uppercase tracking-[0.18em] text-[var(--nuyu-gold)]",
-              compact ? "text-[0.72rem]" : "text-sm",
+              "truncate font-semibold tracking-[0.04em] text-[var(--nuyu-gold)]",
+              compact ? "text-sm" : "text-base",
             )}
           >
-            Nuyu Recovery Home
+            Nuyu
           </p>
         </div>
       ) : null}
@@ -184,14 +184,15 @@ export function AdminShell({ children }: PropsWithChildren) {
 
           <nav className="admin-nav-scroll mt-1 flex-1 overflow-y-auto px-3 pb-5">
             <div className="space-y-4">
-              {navigationSections.map((section) => (
+              {navigationSections.map((section, sectionIndex) => (
                 <Fragment key={section.title}>
-                  {!collapsed ? (
-                    <div className="px-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-disabled)]">
-                        {section.title}
-                      </p>
-                    </div>
+                  {sectionIndex > 0 ? (
+                    <div
+                      className={cn(
+                        "mx-3 border-t border-[var(--color-border-subtle)]",
+                        collapsed && "mx-2",
+                      )}
+                    />
                   ) : null}
 
                   <div className="space-y-1.5">

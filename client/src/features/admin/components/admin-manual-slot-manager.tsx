@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../../lib/api/client";
-import { AdminEmptyState } from "./admin-empty-state";
 import { useAdminAuth } from "../context/admin-auth-provider";
 import { useAdminPortal } from "../context/admin-portal-provider";
 import { formatDateTime } from "../utils/admin-format";
@@ -19,10 +18,8 @@ function formatDateInput(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function getTomorrowDateInput() {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  return formatDateInput(tomorrow);
+function getTodayDateInput() {
+  return formatDateInput(new Date());
 }
 
 function toLagosIso(date: string, time: string) {
@@ -33,7 +30,7 @@ export function AdminManualSlotManager() {
   const { accessToken } = useAdminAuth();
   const { data, refresh } = useAdminPortal();
   const [serviceId, setServiceId] = useState("");
-  const [date, setDate] = useState(getTomorrowDateInput);
+  const [date, setDate] = useState(getTodayDateInput);
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [state, setState] = useState<ActionState>({ status: "idle" });
@@ -53,6 +50,26 @@ export function AdminManualSlotManager() {
       setServiceId(timedServices[0].id);
     }
   }, [serviceId, timedServices]);
+
+  useEffect(() => {
+    if (!serviceId) {
+      return;
+    }
+
+    setDate(getTodayDateInput());
+  }, [serviceId]);
+
+  useEffect(() => {
+    if (state.status !== "success") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setState({ status: "idle" });
+    }, 3000);
+
+    return () => window.clearTimeout(timeout);
+  }, [state.status]);
 
   if (!data) {
     return null;
@@ -77,11 +94,11 @@ export function AdminManualSlotManager() {
 
     setState({
       status: "submitting",
-      message: "Posting the one-off available time...",
+      message: undefined,
     });
 
     try {
-      const result = await apiRequest<{ message: string }>("/admin/manual-slots", {
+      await apiRequest<{ message: string }>("/admin/manual-slots", {
         method: "POST",
         accessToken,
         body: JSON.stringify({
@@ -93,16 +110,13 @@ export function AdminManualSlotManager() {
 
       setState({
         status: "success",
-        message: result.message,
+        message: "Saved.",
       });
       await refresh();
-    } catch (error) {
+    } catch {
       setState({
         status: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to post the one-off available time.",
+        message: "Something went wrong. Please try again.",
       });
     }
   }
@@ -116,29 +130,17 @@ export function AdminManualSlotManager() {
       return;
     }
 
-    setState({
-      status: "submitting",
-      message: "Removing the one-off available time...",
-    });
-
     try {
-      const result = await apiRequest<{ message: string }>(`/admin/manual-slots/${slotId}`, {
+      await apiRequest<{ message: string }>(`/admin/manual-slots/${slotId}`, {
         method: "DELETE",
         accessToken,
       });
 
-      setState({
-        status: "success",
-        message: result.message,
-      });
       await refresh();
-    } catch (error) {
+    } catch {
       setState({
         status: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to remove the one-off available time.",
+        message: "Something went wrong. Please try again.",
       });
     }
   }
@@ -201,19 +203,6 @@ export function AdminManualSlotManager() {
             </label>
           </div>
 
-          {state.message ? (
-            <div
-              className={[
-                "rounded-[1.25rem] px-4 py-3 text-sm",
-                state.status === "error"
-                  ? "bg-[rgba(190,92,63,0.12)] text-[var(--nuyu-ink)]"
-                  : "bg-[rgba(47,93,50,0.08)] text-[var(--nuyu-ink)]",
-              ].join(" ")}
-            >
-              {state.message}
-            </div>
-          ) : null}
-
           <div className="rounded-[1.25rem] bg-[var(--nuyu-cream)] p-4 text-sm text-[var(--nuyu-muted)]">
             Clients will only see this exact time if it is still open. This makes it easy to
             add special appointments without changing the full weekly schedule.
@@ -230,6 +219,18 @@ export function AdminManualSlotManager() {
                 : "Post available time"}
             </button>
           </div>
+          {state.message ? (
+            <p
+              className={[
+                "text-[13px]",
+                state.status === "error"
+                  ? "text-[var(--color-danger)]"
+                  : "text-[var(--color-success)]",
+              ].join(" ")}
+            >
+              {state.message}
+            </p>
+          ) : null}
         </form>
       </AdminPanel>
 
@@ -266,10 +267,9 @@ export function AdminManualSlotManager() {
               </article>
             ))
           ) : (
-            <AdminEmptyState
-              title="No one-off times have been posted yet"
-              description="Once the admin posts a specific time here, it will appear for clients in the booking flow."
-            />
+            <p className="px-4 py-6 text-center text-[13px] text-[var(--color-text-muted)]">
+              No extra slots posted. Use the form above to add a specific open time.
+            </p>
           )}
         </div>
       </AdminPanel>

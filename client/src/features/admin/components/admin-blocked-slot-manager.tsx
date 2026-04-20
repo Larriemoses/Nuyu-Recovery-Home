@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../../lib/api/client";
 import { Button } from "../../../components/ui";
-import { AdminEmptyState } from "./admin-empty-state";
 import { useAdminAuth } from "../context/admin-auth-provider";
 import { useAdminPortal } from "../context/admin-portal-provider";
 import { formatDateTime } from "../utils/admin-format";
@@ -20,10 +19,8 @@ function formatDateInput(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function getTomorrowDateInput() {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  return formatDateInput(tomorrow);
+function getTodayDateInput() {
+  return formatDateInput(new Date());
 }
 
 function toLagosIso(date: string, time: string) {
@@ -34,7 +31,7 @@ export function AdminBlockedSlotManager() {
   const { accessToken } = useAdminAuth();
   const { data, refresh } = useAdminPortal();
   const [serviceId, setServiceId] = useState("");
-  const [date, setDate] = useState(getTomorrowDateInput);
+  const [date, setDate] = useState(getTodayDateInput);
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [reason, setReason] = useState("");
@@ -55,6 +52,26 @@ export function AdminBlockedSlotManager() {
       setServiceId(timedServices[0].id);
     }
   }, [serviceId, timedServices]);
+
+  useEffect(() => {
+    if (!serviceId) {
+      return;
+    }
+
+    setDate(getTodayDateInput());
+  }, [serviceId]);
+
+  useEffect(() => {
+    if (state.status !== "success") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setState({ status: "idle" });
+    }, 3000);
+
+    return () => window.clearTimeout(timeout);
+  }, [state.status]);
 
   if (!data) {
     return null;
@@ -78,11 +95,11 @@ export function AdminBlockedSlotManager() {
 
     setState({
       status: "submitting",
-      message: "Saving the blocked time...",
+      message: undefined,
     });
 
     try {
-      const result = await apiRequest<{ message: string }>("/admin/blocked-slots", {
+      await apiRequest<{ message: string }>("/admin/blocked-slots", {
         method: "POST",
         accessToken,
         body: JSON.stringify({
@@ -95,15 +112,14 @@ export function AdminBlockedSlotManager() {
 
       setState({
         status: "success",
-        message: result.message,
+        message: "Saved.",
       });
       setReason("");
       await refresh();
-    } catch (error) {
+    } catch {
       setState({
         status: "error",
-        message:
-          error instanceof Error ? error.message : "Unable to save the blocked time.",
+        message: "Something went wrong. Please try again.",
       });
     }
   }
@@ -117,30 +133,16 @@ export function AdminBlockedSlotManager() {
       return;
     }
 
-    setState({
-      status: "submitting",
-      message: "Removing the blocked time...",
-    });
-
     try {
-      const result = await apiRequest<{ message: string }>(
-        `/admin/blocked-slots/${blockedSlotId}`,
-        {
-          method: "DELETE",
-          accessToken,
-        },
-      );
-
-      setState({
-        status: "success",
-        message: result.message,
+      await apiRequest<{ message: string }>(`/admin/blocked-slots/${blockedSlotId}`, {
+        method: "DELETE",
+        accessToken,
       });
       await refresh();
-    } catch (error) {
+    } catch {
       setState({
         status: "error",
-        message:
-          error instanceof Error ? error.message : "Unable to remove the blocked time.",
+        message: "Something went wrong. Please try again.",
       });
     }
   }
@@ -213,19 +215,6 @@ export function AdminBlockedSlotManager() {
             />
           </label>
 
-          {state.message ? (
-            <div
-              className={[
-                "rounded-[1.25rem] px-4 py-3 text-sm",
-                state.status === "error"
-                  ? "bg-[color-mix(in_oklab,var(--color-danger)_12%,white)] text-[var(--color-text)]"
-                  : "bg-[color-mix(in_oklab,var(--color-primary)_10%,white)] text-[var(--color-text)]",
-              ].join(" ")}
-            >
-              {state.message}
-            </div>
-          ) : null}
-
           <div className="admin-quiet-card rounded-[1.25rem] p-4 text-sm leading-6 text-[var(--color-text-muted)]">
             Blocking a time here removes that option from the client booking page.
           </div>
@@ -237,6 +226,18 @@ export function AdminBlockedSlotManager() {
                 : "Save blocked time"}
             </Button>
           </div>
+          {state.message ? (
+            <p
+              className={[
+                "text-[13px]",
+                state.status === "error"
+                  ? "text-[var(--color-danger)]"
+                  : "text-[var(--color-success)]",
+              ].join(" ")}
+            >
+              {state.message}
+            </p>
+          ) : null}
         </form>
       </AdminPanel>
 
@@ -273,10 +274,9 @@ export function AdminBlockedSlotManager() {
               </article>
             ))
           ) : (
-            <AdminEmptyState
-              title="No blocked times are saved for this service"
-              description="When a blocked time is added here, it will appear in this list and the booking page will stop offering that time."
-            />
+            <p className="px-4 py-6 text-center text-[13px] text-[var(--color-text-muted)]">
+              No blocked times. Use the form above to remove a period from booking.
+            </p>
           )}
         </div>
       </AdminPanel>

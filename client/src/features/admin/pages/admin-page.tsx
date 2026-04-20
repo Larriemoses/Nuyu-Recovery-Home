@@ -25,22 +25,18 @@ const quickActions = [
   {
     to: "/admin/bookings",
     title: "Review bookings",
-    description: "Open the booking queue and move the next client forward",
   },
   {
     to: "/admin/operations",
     title: "Update availability",
-    description: "Adjust open times, special slots, and blocked periods",
   },
   {
     to: "/admin/reports",
     title: "Export reports",
-    description: "Download the latest daily, weekly, monthly, or yearly view",
   },
   {
     to: "/admin/services",
     title: "Check services",
-    description: "Update pricing, packages, and what clients can currently book",
   },
 ] as const;
 
@@ -48,7 +44,7 @@ function DashboardSkeleton() {
   return (
     <div className="space-y-4">
       <Skeleton className="h-28 w-full" />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(14rem,1fr))]">
         <Skeleton className="h-36 w-full" />
         <Skeleton className="h-36 w-full" />
         <Skeleton className="h-36 w-full" />
@@ -67,17 +63,23 @@ type MetricTileProps = {
   label: string;
   value: string | number;
   hint: string;
+  to?: string;
 };
 
-function MetricTile({ icon, label, value, hint }: MetricTileProps) {
-  return (
-    <Card variant="default" className="h-full">
+function MetricTile({ icon, label, value, hint, to }: MetricTileProps) {
+  const tile = (
+    <Card
+      variant="default"
+      className={[
+        "relative h-full",
+        to ? "transition-colors duration-200 group-hover:border-[var(--color-border)]" : "",
+      ].join(" ")}
+    >
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--color-surface-overlay)] text-[var(--color-primary)]">
             {icon}
           </span>
-          <Badge variant="info">live</Badge>
         </div>
         <div>
           <p className="text-sm text-[var(--color-text-muted)]">{label}</p>
@@ -85,9 +87,24 @@ function MetricTile({ icon, label, value, hint }: MetricTileProps) {
             {value}
           </p>
         </div>
-        <p className="text-sm leading-6 text-[var(--color-text-muted)]">{hint}</p>
+        <p className={["text-sm leading-6 text-[var(--color-text-muted)]", to ? "pr-8" : ""].join(" ")}>
+          {hint}
+        </p>
+        {to ? (
+          <ArrowRight className="pointer-events-none absolute bottom-5 right-5 h-4 w-4 text-[var(--color-text-muted)] transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-[var(--color-text)]" />
+        ) : null}
       </div>
     </Card>
+  );
+
+  if (!to) {
+    return tile;
+  }
+
+  return (
+    <Link to={to} className="group block h-full">
+      {tile}
+    </Link>
   );
 }
 
@@ -148,73 +165,54 @@ export function AdminPage() {
   const waitingForReview = data.metrics.pendingBookings + data.metrics.heldBookings;
   const latestBookings = data.recentBookings.slice(0, 4);
   const topServices = data.servicePerformance.slice(0, 4);
-  const highestPressureMessage =
-    waitingForReview > 0
-      ? `${waitingForReview} booking${waitingForReview === 1 ? "" : "s"} need a closer look today`
-      : "Your booking queue looks calm right now";
+  const attentionMessage =
+    waitingForReview === 0
+      ? "No bookings need your attention today."
+      : `${waitingForReview} booking${waitingForReview === 1 ? "" : "s"} need your attention today.`;
 
   return (
     <div className="space-y-4">
-      <Feedback
-        variant={waitingForReview > 0 ? "warning" : "success"}
-        title={waitingForReview > 0 ? "A few items need your attention" : "You’re in a good place"}
-        message={
-          data.setup.paystackConfigured
-            ? `${highestPressureMessage}, and payment tracking is already connected.`
-            : `${highestPressureMessage}. Payments can be added later, so you can keep focusing on bookings, schedules, and reports for now.`
-        }
-      />
+      <Feedback variant="warning" message={attentionMessage} />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(14rem,1fr))]">
         <MetricTile
           icon={<Clock3 className="h-5 w-5" />}
           label="Needs attention"
           value={waitingForReview}
-          hint="Pending and held bookings that may need a follow-up"
+          hint="Pending bookings to review"
+          to="/admin/bookings?filter=attention"
         />
         <MetricTile
           icon={<CircleDollarSign className="h-5 w-5" />}
           label="Tracked revenue"
           value={formatCurrency(data.metrics.totalRevenueKobo)}
-          hint="Paid or confirmed value already visible in the system"
+          hint="Confirmed payment value"
         />
         <MetricTile
           icon={<UsersRound className="h-5 w-5" />}
           label="Clients"
           value={data.metrics.totalClients}
-          hint="People currently stored in your admin workspace"
+          hint="Clients in your workspace"
         />
         <MetricTile
           icon={<BriefcaseBusiness className="h-5 w-5" />}
           label="Active services"
           value={data.metrics.activeServicesCount}
-          hint="Services clients can currently browse and book"
+          hint="Services clients can book"
         />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.18fr_0.82fr]">
         <Card
           variant="elevated"
-          header={
-            <div className="space-y-1">
-              <p className="text-lg font-semibold text-[var(--color-text)]">What you can do next</p>
-              <p className="text-sm text-[var(--color-text-muted)]">
-                Keep the next best actions close, so nothing important feels buried
-              </p>
-            </div>
-          }
+          header={<p className="text-lg font-semibold text-[var(--color-text)]">Quick actions</p>}
         >
           <div className="grid gap-3 sm:grid-cols-2">
             {quickActions.map((action) => (
-              <Link key={action.to} to={action.to} className="group h-full">
-                <div className="h-full rounded-2xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] px-4 py-4 transition duration-200 group-hover:border-[var(--color-border)] group-hover:bg-[var(--color-surface-raised)] group-active:scale-[0.98]">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-semibold text-[var(--color-text)]">{action.title}</p>
-                    <ArrowRight className="h-4 w-4 text-[var(--color-text-muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-text)]" />
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-                    {action.description}
-                  </p>
+              <Link key={action.to} to={action.to} className="group">
+                <div className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-overlay)] px-4 py-3 transition duration-200 group-hover:border-[var(--color-border)] group-hover:bg-[var(--color-surface-raised)] group-active:scale-[0.98]">
+                  <p className="font-semibold text-[var(--color-text)]">{action.title}</p>
+                  <ArrowRight className="h-4 w-4 text-[var(--color-text-muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-text)]" />
                 </div>
               </Link>
             ))}
@@ -223,24 +221,12 @@ export function AdminPage() {
 
         <Card
           variant="default"
-          header={
-            <div className="space-y-1">
-              <p className="text-lg font-semibold text-[var(--color-text)]">Operations pulse</p>
-              <p className="text-sm text-[var(--color-text-muted)]">
-                The quickest health check for the admin side of the business
-              </p>
-            </div>
-          }
+          header={<p className="text-lg font-semibold text-[var(--color-text)]">System status</p>}
         >
           <div className="space-y-3">
             <div className="rounded-2xl bg-[var(--color-surface-overlay)] px-4 py-4">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-[var(--color-text)]">Booking flow</p>
-                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                    Clients can already browse services and hold time slots
-                  </p>
-                </div>
+                <p className="font-semibold text-[var(--color-text)]">Booking flow</p>
                 <Badge variant="success" withDot>
                   ready
                 </Badge>
@@ -248,12 +234,7 @@ export function AdminPage() {
             </div>
             <div className="rounded-2xl bg-[var(--color-surface-overlay)] px-4 py-4">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-[var(--color-text)]">Admin controls</p>
-                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                    You can manage services, clients, schedules, and reports now
-                  </p>
-                </div>
+                <p className="font-semibold text-[var(--color-text)]">Admin controls</p>
                 <Badge variant="success" withDot>
                   ready
                 </Badge>
@@ -261,29 +242,10 @@ export function AdminPage() {
             </div>
             <div className="rounded-2xl bg-[var(--color-surface-overlay)] px-4 py-4">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-[var(--color-text)]">Paystack</p>
-                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                    Add payments after the booking and admin flow feel right
-                  </p>
-                </div>
+                <p className="font-semibold text-[var(--color-text)]">Paystack</p>
                 <Badge variant={data.setup.paystackConfigured ? "success" : "warning"} withDot>
                   {data.setup.paystackConfigured ? "connected" : "later"}
                 </Badge>
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] px-4 py-4">
-                <p className="text-sm text-[var(--color-text-muted)]">Active holds</p>
-                <p className="mt-2 text-2xl font-semibold text-[var(--color-text)]">
-                  {data.metrics.activeHolds}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] px-4 py-4">
-                <p className="text-sm text-[var(--color-text-muted)]">Stay requests</p>
-                <p className="mt-2 text-2xl font-semibold text-[var(--color-text)]">
-                  {data.metrics.stayRequests}
-                </p>
               </div>
             </div>
           </div>

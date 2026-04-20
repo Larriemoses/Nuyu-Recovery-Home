@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router-dom";
 import { useAdminPortal } from "../context/admin-portal-provider";
 import { AdminEmptyState } from "../components/admin-empty-state";
 import { AdminStatusPill } from "../components/admin-status-pill";
@@ -6,6 +7,7 @@ import { formatBookingSchedule, formatDateTime } from "../utils/admin-format";
 import { formatCurrency } from "../../../utils/currency";
 
 export function AdminBookingsPage() {
+  const [searchParams] = useSearchParams();
   const { data, isLoading, errorMessage } = useAdminPortal();
 
   if (isLoading) {
@@ -29,17 +31,25 @@ export function AdminBookingsPage() {
     );
   }
 
-  const bookingsToReview = data.bookings
-    .filter((booking) => booking.status === "pending" || booking.status === "held")
-    .slice(0, 4);
-  const recentBookings = data.bookings.slice(0, 6);
+  const showingAttentionOnly = searchParams.get("filter") === "attention";
+  const bookingsNeedingAttention = data.bookings.filter(
+    (booking) => booking.status === "pending" || booking.status === "held",
+  );
+  const bookingsToReview = bookingsNeedingAttention.slice(0, 4);
+  const recentBookings = showingAttentionOnly
+    ? bookingsNeedingAttention
+    : data.bookings.slice(0, 6);
 
   return (
     <div className="space-y-4">
       <AdminPanel
         eyebrow="Bookings"
         title="Booking overview"
-        description="Important booking numbers stay at the top, with waiting items and recent activity directly below."
+        description={
+          showingAttentionOnly
+            ? "Showing pending and held bookings so the team can move straight into follow-up."
+            : "Important booking numbers stay at the top, with waiting items and recent activity directly below."
+        }
       >
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <AdminMetricCard
@@ -106,8 +116,12 @@ export function AdminBookingsPage() {
 
         <AdminPanel
           eyebrow="Recent Records"
-          title="Latest booking activity"
-          description="Recent records are arranged in compact rows so they stay readable on smaller screens."
+          title={showingAttentionOnly ? "Pending and held bookings" : "Latest booking activity"}
+          description={
+            showingAttentionOnly
+              ? "Only the bookings that still need attention are showing here."
+              : "Recent records are arranged in compact rows so they stay readable on smaller screens."
+          }
         >
           <div className="space-y-3">
             {recentBookings.length ? (

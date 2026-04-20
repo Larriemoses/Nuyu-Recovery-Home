@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { formatCurrency } from "../../../utils/currency";
 import { AdminAvailabilityManager } from "../components/admin-availability-manager";
@@ -9,7 +10,34 @@ import { AdminMetricCard, AdminPanel } from "../components/admin-ui";
 import { useAdminPortal } from "../context/admin-portal-provider";
 import { formatDateTime } from "../utils/admin-format";
 
+function getHoldUrgency(expiresAt: string) {
+  const millisecondsUntilExpiry = new Date(expiresAt).getTime() - Date.now();
+
+  if (millisecondsUntilExpiry <= 0) {
+    return {
+      label: "Expired",
+      tone: "rose" as const,
+      textClassName: "text-[var(--color-danger)]",
+    };
+  }
+
+  if (millisecondsUntilExpiry <= 2 * 60 * 60 * 1000) {
+    return {
+      label: "Expiring soon",
+      tone: "gold" as const,
+      textClassName: "text-[var(--color-warning)]",
+    };
+  }
+
+  return {
+    label: "",
+    tone: "ink" as const,
+    textClassName: "text-[var(--nuyu-muted)]",
+  };
+}
+
 export function AdminOperationsPage() {
+  const [showScheduleHelp, setShowScheduleHelp] = useState(false);
   const { data, isLoading, errorMessage } = useAdminPortal();
 
   if (isLoading) {
@@ -42,43 +70,47 @@ export function AdminOperationsPage() {
       <AdminPanel
         eyebrow="Operations"
         title="Schedule control"
-        description="This is the simple place to open times, post one-off slots, block times, and move straight into reporting."
       >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(14rem,1fr))]">
           <AdminMetricCard
             label="Weekly windows"
             value={data.operations.availabilityWindows.length}
-            helper="Recurring schedule rules"
+            helper="Recurring rules"
             accent="primary"
           />
           <AdminMetricCard
             label="One-off times"
             value={data.operations.manualAvailabilitySlots.length}
-            helper="Specific extra times visible to clients"
+            helper="Extra open slots"
             accent="gold"
           />
           <AdminMetricCard
             label="Blocked times"
             value={data.operations.blockedSlots.length}
-            helper="Unavailable periods removed from booking"
+            helper="Removed periods"
           />
           <AdminMetricCard
             label="Active holds"
             value={data.operations.activeHolds.length}
-            helper="Temporary reservations still in progress"
+            helper="Pending reservations"
           />
         </div>
 
-        <div className="mt-5 grid gap-3 xl:grid-cols-[1.12fr_0.88fr]">
-          <div className="admin-quiet-card rounded-[1.35rem] p-4 text-sm text-[var(--nuyu-muted)]">
-            <p className="font-semibold text-[var(--nuyu-ink)]">How scheduling works now</p>
-            <p className="mt-2 leading-7">
-              Weekly windows create the normal timetable. One-off times let the admin add a
-              special slot for clients to book. Blocked times remove a period immediately, and
-              active holds show the temporary reservations still waiting for the next step.
-            </p>
-          </div>
-
+        <div className="mt-5 space-y-3">
+          <button
+            type="button"
+            className="w-fit text-sm font-medium text-[var(--color-primary)] transition hover:opacity-80"
+            onClick={() => setShowScheduleHelp((current) => !current)}
+          >
+            How does scheduling work?
+          </button>
+          {showScheduleHelp ? (
+            <div className="admin-quiet-card rounded-[1.35rem] p-4 text-sm leading-7 text-[var(--nuyu-muted)]">
+              Weekly windows create the normal timetable. One-off times add a specific open slot
+              clients can book. Blocked times remove a period immediately, and active holds show
+              the reservations still waiting for the next step.
+            </div>
+          ) : null}
           <div className="admin-quiet-card rounded-[1.35rem] p-4 text-sm text-[var(--nuyu-muted)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="font-semibold text-[var(--nuyu-ink)]">Reports</p>
@@ -99,10 +131,6 @@ export function AdminOperationsPage() {
                 </span>
               ))}
             </div>
-            <p className="mt-3 leading-7">
-              Daily, weekly, monthly, and yearly exports are already available from the
-              reports page.
-            </p>
           </div>
         </div>
       </AdminPanel>
@@ -158,19 +186,32 @@ export function AdminOperationsPage() {
                   key={hold.id}
                   className="admin-list-row rounded-[1.35rem] p-4 text-sm text-[var(--nuyu-muted)]"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-[var(--nuyu-ink)]">{hold.serviceName}</p>
-                      <p className="mt-1">{hold.clientEmail}</p>
-                      <p className="mt-2">
-                        {formatDateTime(hold.startsAt)} to {formatDateTime(hold.endsAt)}
-                      </p>
-                    </div>
-                    <AdminStatusPill label="Live hold" tone="gold" />
-                  </div>
-                  <p className="mt-3 text-xs uppercase tracking-[0.16em]">
-                    Expires {formatDateTime(hold.expiresAt)}
-                  </p>
+                  {(() => {
+                    const urgency = getHoldUrgency(hold.expiresAt);
+
+                    return (
+                      <>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-[var(--nuyu-ink)]">{hold.serviceName}</p>
+                            <p className="mt-1">{hold.clientEmail}</p>
+                            <p className="mt-2">
+                              {formatDateTime(hold.startsAt)} to {formatDateTime(hold.endsAt)}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <AdminStatusPill label="Live hold" tone="gold" />
+                            {urgency.label ? (
+                              <AdminStatusPill label={urgency.label} tone={urgency.tone} />
+                            ) : null}
+                          </div>
+                        </div>
+                        <p className={["mt-3 text-xs uppercase tracking-[0.16em]", urgency.textClassName].join(" ")}>
+                          Expires {formatDateTime(hold.expiresAt)}
+                        </p>
+                      </>
+                    );
+                  })()}
                 </article>
               ))
             ) : (
